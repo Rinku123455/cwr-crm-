@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="manifest" href="/employee.webmanifest">
+<meta name="theme-color" content="#082136">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<title>CWR CRM - Employee Portal</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<script>
+tailwind.config={theme:{extend:{colors:{
+brand:{dark:'#082136',sidebar:'#0b2942',card:'#0d3251',cardHover:'#123e63',red:'#e53935',yellow:'#fbc02d'}
+}}}}
+</script>
+<style>
+html,body{height:100%;margin:0;padding:0}
+body{overflow-x:hidden}
+#sidebar{position:fixed!important;top:0;left:0;bottom:0;height:100vh}
+#mainShell{min-height:100vh;width:auto}
+button:disabled{opacity:.55;cursor:not-allowed}
+</style>
+</head>
+<body class="bg-brand-dark text-white font-sans">
+
+<div id="loginScreen" class="fixed inset-0 z-[100] bg-brand-dark flex items-center justify-center p-4">
+  <div class="bg-brand-card border border-slate-700 rounded-2xl p-8 w-full max-w-sm shadow-2xl">
+    <div class="text-center mb-7">
+      <div class="w-16 h-16 mx-auto rounded-2xl bg-brand-red flex items-center justify-center text-3xl">
+        <i class="fa-solid fa-building-circle-check"></i>
+      </div>
+      <h1 class="text-2xl font-bold mt-4">CWR CRM</h1>
+      <p class="text-xs text-slate-400 mt-1">ClockWise Realty · Employee Portal</p>
+    </div>
+    <div class="space-y-4">
+      <label class="text-xs text-slate-300">Username
+        <input id="lg_user" autocomplete="username" class="mt-1 w-full bg-brand-dark border border-slate-700 rounded-lg px-3 py-3 text-sm outline-none focus:border-brand-yellow">
+      </label>
+      <label class="text-xs text-slate-300">Password
+        <input id="lg_pass" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()" class="mt-1 w-full bg-brand-dark border border-slate-700 rounded-lg px-3 py-3 text-sm outline-none focus:border-brand-yellow">
+      </label>
+      <div id="lg_err" class="text-xs text-red-400 min-h-5"></div>
+      <button onclick="doLogin()" id="loginBtn" class="w-full bg-brand-red hover:bg-red-600 py-3 rounded-lg font-semibold">Sign in</button>
+    </div>
+  </div>
+</div>
+
+<div id="mobile-overlay" onclick="toggleSidebar()" class="fixed inset-0 bg-black/60 z-20 hidden md:hidden"></div>
+
+<aside id="sidebar" class="fixed inset-y-0 left-0 w-60 bg-brand-sidebar border-r border-slate-800 flex flex-col z-30 transform -translate-x-full md:translate-x-0 transition-transform duration-300">
+  <div class="bg-brand-red text-white font-bold text-xl px-5 py-4 flex items-center justify-between">
+    <div class="flex items-center gap-2"><i class="fa-solid fa-building-circle-check"></i><span>CWR CRM</span></div>
+    <button onclick="toggleSidebar()" class="md:hidden"><i class="fa-solid fa-xmark"></i></button>
+  </div>
+  <div class="px-5 py-4 border-b border-slate-800">
+    <div class="text-[10px] uppercase tracking-widest text-slate-500">Employee Portal</div>
+    <div id="sideName" class="font-semibold mt-1">Employee</div>
+  </div>
+  <nav id="nav" class="flex-1 overflow-y-auto py-4 text-sm space-y-1"></nav>
+</aside>
+
+<div id="mainShell" class="min-h-screen md:ml-60 flex flex-col">
+  <header class="flex justify-between items-center px-5 md:px-10 py-5 border-b border-slate-800/60 bg-brand-dark/90 backdrop-blur sticky top-0 z-10">
+    <div class="flex items-center gap-4">
+      <button onclick="toggleSidebar()" class="md:hidden text-slate-300"><i class="fa-solid fa-bars text-xl"></i></button>
+      <div>
+        <h1 id="welcomeTitle" class="text-xl md:text-2xl font-bold"></h1>
+        <p class="text-xs text-slate-400 mt-0.5">ClockWise Realty · Employee Portal</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-3">
+      <button onclick="loadModule('Reminders')" class="relative p-2 text-slate-300">
+        <i class="fa-solid fa-bell text-lg text-brand-yellow"></i>
+        <span id="reminderDot" class="absolute top-1 right-1 w-2 h-2 bg-brand-red rounded-full hidden"></span>
+      </button>
+      <button onclick="loadModule('Profile')" class="w-10 h-10 rounded-full border-2 border-brand-yellow p-0.5 overflow-hidden">
+        <img id="profileImg" src="" class="w-full h-full rounded-full object-cover" alt="Profile">
+      </button>
+    </div>
+  </header>
+
+  <main class="p-4 md:p-8 flex-1">
+    <div id="toast" class="hidden fixed bottom-5 right-5 bg-brand-yellow text-brand-dark font-bold px-4 py-2 rounded-lg shadow-xl z-50"><span id="toast-text"></span></div>
+    <div id="app"></div>
+  </main>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const STAGES=['Fresh','Suspect','Prospect','Followup','Meeting','Site Visit','Booking'];
+const SOURCES=['Website','Meta','Instagram','Referral','Walk-in','Calling','Other'];
+const MODS=[
+ ['Home','fa-house'],['My Leads','fa-address-book'],['Followups','fa-phone'],
+ ['Meetings','fa-handshake'],['Site Visits','fa-building'],['Calendar','fa-calendar-days'],
+ ['Reminders','fa-bell'],['My Attendance','fa-user-clock'],['Leaves','fa-plane-departure'],
+ ['Projects','fa-city'],['Profile','fa-user'],['Change Password','fa-key']
+];
+
+let ME=null, DB={leads:[],events:[],projects:[],leaves:[]}, current='Home';
+let camStream=null,camAction=null;
+
+function esc(v){return String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+function today(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
+function digits(v){return String(v||'').replace(/\D/g,'').slice(-10)}
+function toast(m){$('toast-text').textContent=m;$('toast').classList.remove('hidden');clearTimeout(window._tt);window._tt=setTimeout(()=>$('toast').classList.add('hidden'),2600)}
+function toggleSidebar(){$('sidebar').classList.toggle('-translate-x-full');$('mobile-overlay').classList.toggle('hidden')}
+function greeting(){const h=new Date().getHours();return 'Good '+(h<12?'Morning':h<17?'Afternoon':'Evening')+' '+(ME?.name||'Employee')}
+function api(m,u,b){
+ return fetch(u,{method:m,headers:{'Content-Type':'application/json','X-CWR-Portal':'employee'},body:b===undefined?undefined:JSON.stringify(b),credentials:'same-origin'})
+ .then(async r=>{const j=await r.json().catch(()=>({}));if(r.status===401){logoutLocal();throw new Error('Login required')}if(!r.ok)throw new Error(j.error||('HTTP '+r.status));return j})
+}
+function input(label,id,value='',type='text',extra=''){return `<label class="text-xs text-slate-300">${label}<input id="${id}" type="${type}" value="${esc(value)}" ${extra} class="mt-1 w-full bg-brand-dark/80 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-brand-yellow"></label>`}
+function select(label,id,opts,value=''){return `<label class="text-xs text-slate-300">${label}<select id="${id}" class="mt-1 w-full bg-brand-dark border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white">${opts.map(x=>{let v=Array.isArray(x)?x[0]:x,t=Array.isArray(x)?x[1]:x;return `<option value="${esc(v)}" ${v==value?'selected':''}>${esc(t)}</option>`}).join('')}</select></label>`}
+function btn(t,f,red=false){return `<button onclick="${f}" class="${red?'bg-brand-red hover:bg-red-600':'bg-slate-700 hover:bg-slate-600'} px-4 py-2 rounded-lg text-sm font-semibold">${t}</button>`}
+function layout(t,s,b,a=''){return `<div class="space-y-6"><div class="flex flex-col md:flex-row md:items-center justify-between gap-3"><div><h2 class="text-2xl font-bold">${t}</h2><p class="text-sm text-slate-400">${s||''}</p></div>${a}</div>${b}</div>`}
+function card(t,v,i,click=''){return `<button ${click?`onclick="${click}"`:''} class="bg-brand-card hover:bg-brand-cardHover rounded-xl p-5 border border-slate-800/60 shadow-lg text-left w-full"><div class="flex justify-between items-center"><div><div class="text-xs text-slate-400">${t}</div><div class="text-3xl font-bold mt-2">${v}</div></div><i class="fa-solid ${i} text-2xl text-brand-yellow"></i></div></button>`}
+function th(...c){return `<thead class="bg-brand-sidebar text-slate-300"><tr>${c.map(x=>`<th class="px-4 py-3">${x}</th>`).join('')}</tr></thead>`}
+function empty(n,t){return `<tr><td colspan="${n}" class="px-4 py-10 text-center text-slate-500">${t}</td></tr>`}
+
+function buildNav(){
+ $('nav').innerHTML=MODS.map(([n,i])=>`<button onclick="loadModule('${n}')" data-module="${n}" class="nav-btn w-full flex items-center gap-3 px-6 py-2.5 text-left text-slate-300 hover:text-white hover:bg-slate-800/30"><i class="fa-solid ${i} w-4 text-center"></i>${n}</button>`).join('');
+}
+function active(n){document.querySelectorAll('.nav-btn').forEach(b=>{const on=b.dataset.module===n;b.className='nav-btn w-full flex items-center gap-3 px-6 py-2.5 text-left '+(on?'text-white font-medium bg-slate-800/60 border-l-4 border-brand-yellow':'text-slate-300 hover:text-white hover:bg-slate-800/30')})}
+function loadModule(n){current=n;active(n);render(n);if(innerWidth<768&&!$('sidebar').classList.contains('-translate-x-full'))toggleSidebar()}
+function avatar(){$('welcomeTitle').textContent=greeting();$('sideName').textContent=ME?.name||'Employee';$('profileImg').src=ME?.avatar||`https://ui-avatars.com/api/?name=${encodeURIComponent(ME?.name||'Employee')}&background=fbc02d&color=082136`}
+
+async function doLogin(){
+ const err=$('lg_err'),btnx=$('loginBtn');err.textContent='';
+ const username=$('lg_user').value.trim(),password=$('lg_pass').value;
+ if(!username||!password){err.textContent='Username and password required';return}
+ btnx.disabled=true;btnx.textContent='Signing in...';
+ try{
+   const me=await api('POST','/api/login',{username,password});
+   if(me.role!=='employee'){await api('POST','/api/logout').catch(()=>{});throw new Error('This portal is only for employee accounts')}
+   ME=me;
+   $('loginScreen').remove();
+   buildNav();avatar();
+   await refreshAll();
+   loadModule('Home');if(ME.defaultPass)setTimeout(()=>toast('Default password hai – Settings me jaakar change karo'),900);
+ }catch(e){err.textContent=e.message||'Login failed'}finally{btnx.disabled=false;btnx.textContent='Sign in'}
+}
+async function boot(){
+ try{
+   const me=await api('GET','/api/me');
+   if(me.role!=='employee'){await api('POST','/api/logout').catch(()=>{});throw new Error('Admin account must use the Admin Portal')}
+   ME=me;$('loginScreen').remove();buildNav();avatar();await refreshAll();loadModule('Home');if(ME.defaultPass)setTimeout(()=>toast('Default password hai – Settings me jaakar change karo'),900);
+ }catch(e){/* login screen remains */}
+}
+async function logout(){await api('POST','/api/logout').catch(()=>{});logoutLocal()}
+function logoutLocal(){location.reload()}
+
+async function refreshAll(){
+ const [leads,events,projects,leaves]=await Promise.all([
+   api('GET','/api/col?c=leads'),
+   api('GET','/api/col?c=events'),
+   api('GET','/api/col?c=projects'),
+   api('GET','/api/col?c=leaves')
+ ]);
+ DB.leads=leads.map(x=>({id:x.id,...x.data}));
+ DB.events=events.map(x=>({id:x.id,...x.data}));
+ DB.projects=projects.map(x=>({id:x.id,...x.data}));
+ DB.leaves=leaves.map(x=>({id:x.id,...x.data}));
+}
+
+function saveDoc(c,id,data,patch=false){
+ return api(patch?'PATCH':'PUT',`/api/doc?c=${encodeURIComponent(c)}&id=${encodeURIComponent(id)}`,data);
+}
+function newId(){return 'CWR-'+Date.now().toString(36).toUpperCase()+Math.random().toString(36).slice(2,6).toUpperCase()}
+function newLeadId(){const nums=DB.leads.map(x=>/^\d+$/.test(String(x.id))?Number(x.id):0);return String(Math.max(0,...nums)+1)}
+
+function dashboard(){
+ const t=today(),fresh=DB.leads.filter(x=>x.stage==='Fresh').length,fu=DB.events.filter(x=>x.type==='Followup'&&x.date===t&&x.status!=='Done').length,meet=DB.events.filter(x=>x.type==='Meeting'&&x.date===t&&x.status!=='Done').length,vis=DB.events.filter(x=>x.type==='Site Visit'&&x.date===t&&x.status!=='Done').length;
+ return layout('Dashboard','Your ClockWise Realty work overview',
+ `<div class="grid grid-cols-2 lg:grid-cols-5 gap-4">
+ ${card('My Leads',DB.leads.length,'fa-address-book',"loadModule('My Leads')")}
+ ${card('Fresh Leads',fresh,'fa-bolt',"loadModule('My Leads')")}
+ ${card('Today Follow-ups',fu,'fa-phone',"loadModule('Followups')")}
+ ${card('Today Meetings',meet,'fa-handshake',"loadModule('Meetings')")}
+ ${card('Today Site Visits',vis,'fa-building',"loadModule('Site Visits')")}
+ </div>
+ <div class="grid lg:grid-cols-2 gap-6">
+ <div class="bg-brand-card border border-slate-800 rounded-xl p-5"><h3 class="font-bold mb-4">Lead Pipeline</h3>${STAGES.map(s=>{let n=DB.leads.filter(x=>x.stage===s).length;return `<div class="mb-3"><div class="flex justify-between text-xs mb-1"><span>${s}</span><span>${n}</span></div><div class="h-2 bg-brand-dark rounded-full overflow-hidden"><div class="h-full bg-brand-yellow" style="width:${Math.min(100,n/Math.max(1,DB.leads.length)*100)}%"></div></div></div>`}).join('')}</div>
+ <div class="bg-brand-card border border-slate-800 rounded-xl p-5"><h3 class="font-bold mb-4">Quick Actions</h3><div class="flex flex-wrap gap-2">${btn('My Leads',"loadModule('My Leads')",true)}${btn('Schedule Follow-up',"openEvent('Followup')")}${btn('Schedule Meeting',"openEvent('Meeting')")}${btn('<i class="fa-solid fa-camera mr-1"></i> Check In (Selfie)',"openSelfie('in')",true)}${btn('Check Attendance',"loadModule('My Attendance')")}</div></div>
+ </div>`);
+}
+
+function leadRows(arr){
+ return arr.length?arr.map(l=>`<tr class="border-t border-slate-800 hover:bg-slate-800/30">
+ <td class="px-4 py-3 font-mono text-brand-yellow">${esc(l.id)}</td>
+ <td class="px-4 py-3 font-semibold">${esc(l.name)}<div class="text-[11px] text-slate-500">${esc(l.source||'')}</div></td>
+ <td class="px-4 py-3">${esc(l.phone)}</td><td class="px-4 py-3">${esc(l.project)}</td>
+ <td class="px-4 py-3"><span class="px-2 py-1 rounded-full text-[11px] bg-slate-800">${esc(l.stage||'Fresh')}</span></td>
+ <td class="px-4 py-3">${esc(l.nextFollowup||'-')}</td>
+ <td class="px-4 py-3 whitespace-nowrap">
+ <button onclick="location.href='tel:${esc(l.phone)}'" class="text-emerald-400 px-1" title="Call"><i class="fa-solid fa-phone"></i></button>
+ <button onclick="window.open('https://wa.me/91${digits(l.phone)}','_blank')" class="text-green-400 px-1" title="WhatsApp"><i class="fa-brands fa-whatsapp"></i></button>
+ <button onclick="openLeadUpdate('${l.id}')" class="inline-flex items-center gap-1 text-brand-yellow border border-brand-yellow/40 bg-brand-yellow/10 hover:bg-brand-yellow/20 rounded-md px-2 py-1 mr-1" title="Add Feedback / Move Stage"><i class="fa-solid fa-comment-dots"></i><span>Feedback</span></button>
+ <button onclick="openLead('${l.id}')" class="text-slate-300 px-1" title="Edit lead"><i class="fa-solid fa-pen"></i></button>
+ </td></tr>`).join(''):empty(7,'No leads assigned to you')
+}
+function myLeads(){
+ return layout('My Leads',`${DB.leads.length} leads assigned to you`,
+ `<div class="flex flex-wrap gap-2">${btn('＋ Add Lead','openLead()',true)}</div>
+ <div class="bg-brand-card border border-slate-800 rounded-xl overflow-hidden"><div class="p-4"><input id="leadSearch" oninput="refreshLeadTable()" placeholder="Search name, phone or project..." class="w-full md:w-96 bg-brand-dark border border-slate-700 rounded-lg px-4 py-2.5 text-sm"></div>
+ <div class="overflow-x-auto"><table class="w-full text-left text-xs">${th('ID','Client','Phone','Project','Stage','Follow-up','Actions')}<tbody id="leadBody">${leadRows(DB.leads)}</tbody></table></div></div>`);
+}
+function refreshLeadTable(){const q=($('leadSearch')?.value||'').toLowerCase();const a=DB.leads.filter(l=>(l.name+' '+l.phone+' '+l.project+' '+l.stage).toLowerCase().includes(q));if($('leadBody'))$('leadBody').innerHTML=leadRows(a)}
+function leadForm(l={},prefix='l_'){
+ return `<div class="grid md:grid-cols-2 gap-4">
+ ${input('Customer Name',prefix+'name',l.name||'')}${input('Mobile Number',prefix+'phone',l.phone||'','tel')}
+ ${input('Email',prefix+'email',l.email||'')}${input('Project / Requirement',prefix+'project',l.project||'')}
+ ${select('Stage',prefix+'stage',STAGES,l.stage||'Fresh')}${select('Source',prefix+'source',SOURCES,l.source||'Calling')}
+ ${input('Budget',prefix+'budget',l.budget||'')}${input('Location',prefix+'location',l.location||'Noida')}
+ ${input('Next Follow-up',prefix+'date',l.nextFollowup||'', 'date')}<label class="text-xs text-slate-300">Notes<textarea id="${prefix}notes" class="mt-1 w-full bg-brand-dark/80 border border-slate-700 rounded-lg px-3 py-2.5 text-sm">${esc(l.notes||'')}</textarea></label>
+ </div>`;
+}
+function leadHistoryHtml(l){
+ const h=Array.isArray(l.history)?l.history:[];
+ if(!h.length)return `<div class="text-sm text-slate-500 py-3">No conversation history yet.</div>`;
+ return `<div class="space-y-3">${h.slice().reverse().map(x=>`<div class="border border-slate-700 rounded-lg p-3 bg-brand-dark/50"><div class="flex flex-wrap justify-between gap-2 text-[11px]"><span class="text-brand-yellow font-semibold">${esc(x.stageFrom||'-')} → ${esc(x.stageTo||x.stageFrom||'-')}</span><span class="text-slate-500">${esc(x.at||'')}</span></div><div class="text-sm text-slate-200 mt-2 whitespace-pre-wrap">${esc(x.note||'No remark added')}</div>${x.nextFollowup?`<div class="text-[11px] text-emerald-400 mt-2"><i class="fa-regular fa-calendar"></i> Next follow-up: ${esc(x.nextFollowup)}${x.nextFollowupTime?' at '+esc(x.nextFollowupTime):''}</div>`:''}</div>`).join('')}</div>`;
+}
+function openLeadUpdate(id){
+ const l=DB.leads.find(x=>x.id===id);if(!l)return;
+ const h=Array.isArray(l.history)?l.history:[];
+ const body=`<div class="mb-5 p-4 rounded-xl border border-slate-700 bg-brand-dark/50"><div class="font-bold text-lg">${esc(l.name)}</div><div class="text-sm text-slate-400 mt-1">${esc(l.phone)} • ${esc(l.project)}</div><div class="mt-3 text-xs text-slate-400">Current Stage</div><div class="mt-1 inline-flex px-3 py-1 rounded-full bg-brand-yellow/10 text-brand-yellow text-xs font-semibold">${esc(l.stage||'Fresh')}</div></div>
+ <div class="grid md:grid-cols-2 gap-4">
+ ${select('New Stage','lu_stage',STAGES,l.stage||'Fresh')}
+ ${input('Next Follow-up','lu_date',l.nextFollowup||'','date')}
+ ${input('Follow-up Time','lu_time',l.nextFollowupTime||'','time')}
+ <label class="text-xs text-slate-300 md:col-span-2">Conversation / Feedback<textarea id="lu_note" class="mt-1 w-full bg-brand-dark/80 border border-slate-700 rounded-lg px-3 py-3 text-sm" rows="5" placeholder="Customer se kya baat hui? Interest, objection, next action, etc."></textarea></label>
+ </div>
+ <div class="mt-5"><div class="font-semibold mb-2">Conversation History</div>${leadHistoryHtml(l)}</div>
+ <div class="mt-5 flex justify-end gap-2">${btn('Cancel','closeModal()')}${btn('Save & Move Stage','saveLeadUpdate(\''+id+'\')',true)}</div>`;
+ show('Update Lead / Conversation',body);
+}
+function modal(title,body){return `<div id="modal" class="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"><div class="bg-brand-card border border-slate-700 rounded-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto"><div class="p-5 border-b border-slate-700 flex justify-between"><h3 class="font-bold text-lg">${title}</h3><button onclick="closeModal()"><i class="fa-solid fa-xmark"></i></button></div><div class="p-5">${body}</div></div></div>`}
+function show(t,b){closeModal();document.body.insertAdjacentHTML('beforeend',modal(t,b))}
+function closeModal(){stopCam();$('modal')?.remove()}
+function openLead(id=''){
+ const l=id?DB.leads.find(x=>x.id===id):{};
+ show(id?'Edit Lead':'Add New Lead',leadForm(l)+(id?`<div class="mt-5 flex justify-end gap-2">${btn('Cancel','closeModal()')}${btn('Update','saveLead(\''+id+'\')',true)}</div>`:`<div class="mt-5 flex justify-end gap-2">${btn('Cancel','closeModal()')}${btn('Save Lead','saveLead()',true)}</div>`));
+}
+async function saveLead(id=''){
+ const p=id?'e_':'l_',g=k=>$(p+k).value.trim(),d={name:g('name'),phone:digits(g('phone')),email:g('email'),project:g('project'),stage:g('stage'),source:g('source'),budget:g('budget'),location:g('location'),nextFollowup:g('date'),notes:g('notes')};
+ if(!d.name||!d.project||d.phone.length!==10){toast('Name, project and valid 10-digit mobile required');return}
+ try{if(id)await saveDoc('leads',id,d,true);else await saveDoc('leads',newLeadId(),d,false);closeModal();await refreshAll();render(current);toast(id?'Lead updated':'Lead added')}catch(e){toast(e.message)}
+}
+function localStamp(){return new Date().toLocaleString('en-IN',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}
+async function saveLeadUpdate(id){
+ const l=DB.leads.find(x=>x.id===id);if(!l)return;
+ const stage=$('lu_stage').value,date=$('lu_date').value,time=$('lu_time').value,note=$('lu_note').value.trim();
+ if(!note){toast('Conversation / feedback is required');return}
+ const history=Array.isArray(l.history)?l.history.slice():[];
+ history.push({at:localStamp(),stageFrom:l.stage||'Fresh',stageTo:stage,note,nextFollowup:date,nextFollowupTime:time,uid:ME?.id||''});
+ const patch={stage,nextFollowup:date,nextFollowupTime:time,history,lastFeedback:note,lastContactAt:localStamp()};
+ try{
+   await saveDoc('leads',id,patch,true);
+   if(date){
+     const existing=DB.events.find(e=>e.leadId===id&&e.type==='Followup'&&e.date===date&&e.status!=='Done');
+     if(!existing){await saveDoc('events',newId(),{leadId:id,name:l.name,phone:l.phone,date,time,location:l.location||'',note,status:'Scheduled',type:'Followup'},false)}
+   }
+   closeModal();await refreshAll();render(current);toast(stage===l.stage?'Conversation saved':'Lead moved to '+stage);
+ }catch(e){toast(e.message)}
+}
+async function updateLeadStage(id,stage){openLeadUpdate(id);setTimeout(()=>{if($('lu_stage'))$('lu_stage').value=stage},0)}
+
+function eventRows(arr,type){
+ return arr.length?arr.map(x=>`<tr class="border-t border-slate-800"><td class="px-4 py-3">${esc(x.name||'-')}</td><td class="px-4 py-3">${esc(x.phone||'-')}</td><td class="px-4 py-3">${esc(x.date)}</td><td class="px-4 py-3">${esc(x.time||'-')}</td><td class="px-4 py-3">${esc(x.location||x.note||'-')}</td><td class="px-4 py-3 ${x.status==='Done'?'text-emerald-400':'text-brand-yellow'}">${esc(x.status||'Scheduled')}</td><td class="px-4 py-3">${x.status==='Done'?'':`<button onclick="doneEvent('${x.id}')" class="text-emerald-400 mr-2"><i class="fa-solid fa-check"></i></button>`}<button onclick="deleteEvent('${x.id}')" class="text-red-400"><i class="fa-solid fa-trash"></i></button></td></tr>`).join(''):empty(7,'No records')}
+function eventModule(type,title){
+ const arr=DB.events.filter(x=>x.type===type).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+ return layout(title,`${arr.filter(x=>x.status!=='Done').length} pending`,btn('＋ Schedule',`openEvent('${type}')`,true)+`<div class="bg-brand-card rounded-xl border border-slate-800 overflow-hidden"><div class="overflow-x-auto"><table class="w-full text-left text-xs">${th('Client','Phone','Date','Time','Location/Note','Status','Action')}<tbody>${eventRows(arr,type)}</tbody></table></div></div>`);
+}
+function openEvent(type){
+ if(!DB.leads.length){toast('No lead assigned');return}
+ show('Schedule '+type,`<div class="grid md:grid-cols-2 gap-4">
+ ${select('Lead','ev_lead',DB.leads.map(x=>[x.id,x.name+' | '+x.phone]))}
+ ${input('Date','ev_date',today(),'date')}${input('Time','ev_time','','time')}${input('Location','ev_location','Noida')}${input('Note','ev_note','')}
+ </div><div class="mt-5 flex justify-end">${btn('Cancel','closeModal()')}${btn('Save','saveEvent(\''+type+'\')',true)}</div>`);
+}
+async function saveEvent(type){
+ const id=$('ev_lead').value,l=DB.leads.find(x=>x.id===id);
+ if(!$('ev_date').value||!$('ev_time').value){toast('Date and time required');return}
+ const eid=newId(),d={leadId:id,name:l?.name||'',phone:l?.phone||'',date:$('ev_date').value,time:$('ev_time').value,location:$('ev_location').value,note:$('ev_note').value,status:'Scheduled',type};
+ try{await saveDoc('events',eid,d,false);closeModal();await refreshAll();loadModule(type==='Followup'?'Followups':type==='Meeting'?'Meetings':'Site Visits');toast(type+' scheduled')}catch(e){toast(e.message)}
+}
+async function doneEvent(id){try{await saveDoc('events',id,{status:'Done'},true);await refreshAll();render(current);toast('Marked as done')}catch(e){toast(e.message)}}
+async function deleteEvent(id){if(!confirm('Delete this record?'))return;try{await api('DELETE','/api/doc?c=events&id='+encodeURIComponent(id));await refreshAll();render(current)}catch(e){toast(e.message)}}
+
+function calendar(){
+ const a=[...DB.events].sort((x,y)=>(x.date||'').localeCompare(y.date||'')||(x.time||'').localeCompare(y.time||''));
+ return layout('Calendar','Your scheduled CRM activities',`<div class="bg-brand-card rounded-xl border border-slate-800 overflow-hidden"><div class="overflow-x-auto"><table class="w-full text-left text-xs">${th('Date','Time','Type','Client','Location','Status')}<tbody>${a.map(x=>`<tr class="border-t border-slate-800"><td class="px-4 py-3">${esc(x.date)}</td><td class="px-4 py-3">${esc(x.time||'-')}</td><td class="px-4 py-3 text-brand-yellow">${esc(x.type)}</td><td class="px-4 py-3">${esc(x.name)}</td><td class="px-4 py-3">${esc(x.location||'-')}</td><td class="px-4 py-3">${esc(x.status)}</td></tr>`).join('')||empty(6,'No scheduled activity')}</tbody></table></div></div>`);
+}
+function reminders(){
+ const t=today(),a=DB.events.filter(x=>x.status!=='Done'&&x.date<=t).sort((x,y)=>(x.date||'').localeCompare(y.date||''));
+ $('reminderDot').classList.toggle('hidden',!a.length);
+ return layout('Reminders','Today and overdue work',`<div class="bg-brand-card rounded-xl border border-slate-800 p-5">${a.length?a.map(x=>`<div class="p-4 border-b border-slate-800 flex justify-between gap-4"><div><b>${esc(x.name||'-')}</b><div class="text-xs text-slate-400">${esc(x.type)} · ${esc(x.time||'')} · ${esc(x.phone||'')}</div></div><span class="${x.date<t?'text-red-400':'text-brand-yellow'}">${esc(x.date)}</span></div>`).join(''):'<div class="text-center text-slate-500 py-10">Nothing pending</div>'}</div>`);
+}
+
+function hours(a,b){if(!a||!b)return '-';const m=(+b.slice(0,2)*60+ +b.slice(3))-(+a.slice(0,2)*60+ +a.slice(3));return m<0?'-':Math.floor(m/60)+'h '+String(m%60).padStart(2,'0')+'m'}
+function attendance(){
+ return api('GET','/api/attendance?uid='+encodeURIComponent(ME.id)).then(rows=>{
+  const a=rows.find(x=>x.date===today()),acts=!a?btn('<i class="fa-solid fa-camera mr-1"></i> Check In (Selfie)',"openSelfie('in')",true):a.status!=='Leave'&&!a.outTime?btn('<i class="fa-solid fa-camera mr-1"></i> Check Out (Selfie)',"openSelfie('out')",true):'<span class="text-xs text-slate-400">Attendance complete for today.</span>';
+  const photo=(r,k)=>r[k+'Photo']?`<img src="/api/photo?uid=${encodeURIComponent(ME.id)}&date=${encodeURIComponent(r.date)}&k=${k}" onclick="window.open(this.src,'_blank')" class="w-9 h-9 rounded-full object-cover border border-brand-yellow cursor-pointer">`:'';
+  return layout('My Attendance','Server-time attendance · Live selfie required',
+   `<div class="bg-brand-card rounded-xl border border-slate-800 p-6 max-w-xl"><div class="text-sm">Date: <b>${today()}</b></div><div class="text-sm mt-2">Status: <b>${a?esc(a.status):'<span class="text-brand-yellow">Not marked</span>'}</b></div>${a?`<div class="text-sm mt-2 flex items-center gap-2">Check In: ${photo(a,'in')} ${esc(a.inTime||'-')}</div><div class="text-sm mt-2 flex items-center gap-2">Check Out: ${photo(a,'out')} ${esc(a.outTime||'-')}</div><div class="text-sm mt-2">Worked: <b>${hours(a.inTime,a.outTime)}</b></div>`:''}<div class="flex gap-2 mt-5">${acts}</div></div>
+    <div class="bg-brand-card rounded-xl border border-slate-800 overflow-hidden"><div class="overflow-x-auto"><table class="w-full text-left text-xs">${th('Date','Status','Check In','Check Out','Worked')}<tbody>${rows.map(x=>`<tr class="border-t border-slate-800"><td class="px-4 py-3">${esc(x.date)}</td><td class="px-4 py-3">${esc(x.status)}</td><td class="px-4 py-3">${esc(x.inTime||'-')}</td><td class="px-4 py-3">${esc(x.outTime||'-')}</td><td class="px-4 py-3">${hours(x.inTime,x.outTime)}</td></tr>`).join('')||empty(5,'No attendance records')}</tbody></table></div></div>`);
+ }).catch(e=>{toast(e.message);return layout('My Attendance','Unable to load attendance',`<div class="bg-brand-card p-6 rounded-xl">Please refresh and try again.</div>`)});
+}
+function stopCam(){camStream?.getTracks().forEach(t=>t.stop());camStream=null}
+function closeCam(){stopCam();closeModal()}
+async function openSelfie(action){
+ camAction=action;
+ show('Live Selfie – '+(action==='in'?'Check In':'Check Out'),`<div class="text-center"><video id="camVid" autoplay playsinline muted class="w-full max-w-sm mx-auto rounded-xl bg-black min-h-64 object-cover"></video><div class="mt-4 flex justify-center gap-2">${btn('Cancel','closeCam()')}${btn('<i class="fa-solid fa-camera mr-1"></i> Capture','captureSelfie()',true)}</div><p id="camMsg" class="text-xs text-slate-400 mt-3">Allow camera access when your browser asks.</p></div>`);
+ try{camStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:720},height:{ideal:960}},audio:false});$('camVid').srcObject=camStream}
+ catch(e){$('camMsg').innerHTML='<span class="text-red-400">Camera permission denied or unavailable. Allow camera access and try again.</span>'}
+}
+function captureSelfie(){
+ const v=$('camVid');if(!v||!v.videoWidth){toast('Camera not ready');return}
+ const c=document.createElement('canvas'),w=240,h=Math.round(240*v.videoHeight/v.videoWidth);c.width=w;c.height=h;c.getContext('2d').drawImage(v,0,0,w,h);
+ const photo=c.toDataURL('image/jpeg',.5);stopCam();closeModal();sendAttendance(photo)
+}
+async function sendAttendance(photo){
+ try{const url=camAction==='in'?'/api/attendance/checkin':'/api/attendance/checkout';await api('POST',url,{photo});toast(camAction==='in'?'Check-In successful':'Check-Out successful');loadModule('My Attendance')}catch(e){toast(e.message)}
+}
+function leaves(){
+ const mine=DB.leaves.filter(x=>x.uid===ME.id);
+ return layout('Leaves','Your leave requests',btn('＋ Request Leave','openLeave()',true)+`<div class="bg-brand-card rounded-xl border border-slate-800 p-5">${mine.map(x=>`<div class="py-3 border-b border-slate-800 text-sm"><b>${esc(x.date)}</b> · ${esc(x.reason||'No reason')} · <span class="text-brand-yellow">${esc(x.status||'Pending')}</span></div>`).join('')||'<div class="text-slate-500">No leave requests</div>'}</div>`);
+}
+function openLeave(){show('Request Leave',`<div class="grid md:grid-cols-2 gap-4">${input('Date','lv_date',today(),'date')}${input('Reason','lv_reason','')}</div><div class="mt-5 flex justify-end">${btn('Cancel','closeModal()')}${btn('Submit','saveLeave()',true)}</div>`)}
+async function saveLeave(){const date=$('lv_date').value,reason=$('lv_reason').value.trim();if(!date){toast('Date required');return}try{await saveDoc('leaves',newId(),{uid:ME.id,date,reason,status:'Pending'},false);closeModal();await refreshAll();loadModule('Leaves');toast('Leave request submitted')}catch(e){toast(e.message)}}
+
+function projects(){return layout('Projects','Project master list',`<div class="grid md:grid-cols-3 gap-4">${DB.projects.map(p=>`<div class="bg-brand-card border border-slate-800 rounded-xl p-5"><i class="fa-solid fa-city text-brand-yellow text-2xl"></i><h3 class="font-bold mt-3">${esc(p.name||p)}</h3></div>`).join('')||'<div class="text-slate-500">No projects available</div>'}</div>`)}
+
+function profile(){
+ return layout('Profile','Your employee account',`<div class="bg-brand-card border border-slate-800 rounded-xl p-6 max-w-2xl"><div class="grid md:grid-cols-2 gap-4">${input('Name','p_name',ME.name)}${input('Username','p_user',ME.username,'text','readonly')}${input('Title','p_title',ME.title||'Employee')}${input('Phone','p_phone',ME.phone||'')}</div><div class="mt-5 flex gap-2">${btn('Save Profile','saveProfile()',true)}${btn('Logout','logout()')}</div></div>`);
+}
+async function saveProfile(){try{await api('PATCH','/api/users/'+ME.id,{name:$('p_name').value.trim(),title:$('p_title').value.trim(),phone:$('p_phone').value.trim()});ME.name=$('p_name').value.trim();ME.title=$('p_title').value.trim();ME.phone=$('p_phone').value.trim();avatar();toast('Profile updated')}catch(e){toast('Profile update is admin-only on this server. Contact admin.')}}
+
+function passwordPage(){
+ return layout('Change Password','Update your CRM login password',`<div class="bg-brand-card border border-slate-800 rounded-xl p-6 max-w-lg"><div class="space-y-4">${input('Current Password','pw_old','','password')}${input('New Password','pw_new','','password')}${input('Confirm New Password','pw_confirm','','password')}</div><div class="mt-5">${btn('Change Password','changePassword()',true)}</div></div>`);
+}
+async function changePassword(){const o=$('pw_old').value,n=$('pw_new').value,c=$('pw_confirm').value;if(n.length<6||n!==c){toast('New password must be 6+ characters and match');return}try{await api('POST','/api/password',{old:o,new:n});toast('Password changed. Please login again.');setTimeout(()=>logout(),700)}catch(e){toast(e.message)}}
+
+const views={
+ Home:dashboard,'My Leads':myLeads,Followups:()=>eventModule('Followup','Follow-ups'),Meetings:()=>eventModule('Meeting','Meetings'),
+ 'Site Visits':()=>eventModule('Site Visit','Site Visits'),Calendar:calendar,Reminders:reminders,
+ 'My Attendance':attendance,Leaves:leaves,Projects:projects,Profile:profile,'Change Password':passwordPage
+};
+function render(name){current=name;const v=views[name]||dashboard;const out=v();if(out&&typeof out.then==='function'){ $('app').innerHTML='<div class="text-slate-400">Loading...</div>';out.then(x=>{$('app').innerHTML=x;$('reminderDot').classList.toggle('hidden',!DB.events.some(e=>e.status!=='Done'&&e.date<=today()))}) }else{$('app').innerHTML=out;$('reminderDot').classList.toggle('hidden',!DB.events.some(e=>e.status!=='Done'&&e.date<=today()))}}
+buildNav();boot();
+if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});
+</script>
+</body>
+</html>

@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#082136">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<title>CWR CRM - ClockWise Realty</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config={theme:{extend:{colors:{brand:{dark:'#082136',sidebar:'#0b2942',card:'#0d3251',cardHover:'#123e63',red:'#e53935',yellow:'#fbc02d'}}}}}
+</script>
+<style>:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);background:#082136}html,body{height:100%;background:#082136;color:#fff}html{scroll-padding-top:env(safe-area-inset-top,0px)}</style>
+</head>
+<body class="bg-brand-dark text-white font-sans flex overflow-hidden">
+
+<div id="mobile-overlay" onclick="toggleSidebar()" class="fixed inset-0 bg-black/60 z-20 hidden md:hidden"></div>
+
+<aside id="sidebar" class="fixed md:static inset-y-0 left-0 w-60 bg-brand-sidebar border-r border-slate-800 flex flex-col flex-shrink-0 z-30 transform -translate-x-full md:translate-x-0 transition-transform duration-300 ease-in-out">
+  <div class="bg-brand-red text-white font-bold text-xl px-6 py-4 tracking-wide flex items-center justify-between">
+    <div class="flex items-center gap-2"><span>🏢</span><span>CWR CRM</span></div>
+    <button onclick="toggleSidebar()" class="md:hidden text-white">✕</button>
+  </div>
+  <nav id="nav" class="flex-1 overflow-y-auto py-4 text-sm space-y-1"></nav>
+</aside>
+
+<div class="flex-1 flex flex-col min-w-0 overflow-y-auto">
+  <header class="flex justify-between items-center px-6 md:px-10 py-5 border-b border-slate-800/60 bg-brand-dark/90 backdrop-blur sticky z-10" style="top:0">
+    <div class="flex items-center gap-4">
+      <button onclick="toggleSidebar()" class="md:hidden text-slate-300 hover:text-white text-xl">☰</button>
+      <div>
+        <h1 id="welcomeTitle" class="text-xl md:text-2xl font-bold tracking-wide"></h1>
+        <p id="roleLine" class="text-xs text-slate-400 mt-0.5">ClockWise Realty CRM</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-4">
+      <button onclick="logout()" class="text-xs text-slate-400 hover:text-white border border-slate-700 rounded-lg px-3 py-1.5">Logout</button>
+      <button onclick="loadModule('Reminders')" class="relative p-2 text-slate-300 hover:text-white rounded-full">
+        <span class="text-lg">🔔</span>
+        <span id="reminderDot" class="absolute top-1 right-1 w-2 h-2 bg-brand-red rounded-full hidden"></span>
+      </button>
+      <div class="w-10 h-10 rounded-full border-2 border-brand-yellow p-0.5 overflow-hidden">
+        <img id="profileImg" src="" alt="Profile" class="w-full h-full rounded-full object-cover">
+      </div>
+    </div>
+  </header>
+  <main class="p-4 md:p-8 flex-1">
+    <div id="banner" class="hidden mb-4 bg-red-900/40 border border-red-700 text-red-200 text-sm rounded-lg px-4 py-3"></div>
+    <div id="toast" class="hidden fixed bottom-5 right-5 bg-brand-yellow text-brand-dark font-bold px-4 py-2 rounded-lg shadow-xl z-50 max-w-xs"><span id="toast-text"></span></div>
+    <div id="app"></div>
+  </main>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+const STAGES=['Fresh','Suspect','Prospect','Followup','Meeting','Site Visit','Booking'];
+const SOURCES=['Website','Meta','Instagram','Referral','Walk-in','Calling','Other'];
+const ATT_STATUS=['Present','Late','Half Day','Leave','Absent'];
+const MODS=[['Home','🏠'],['All Leads','📇'],['Assign Leads','🎯'],['Fresh Leads','✨'],['Suspect','🕵️'],['Prospect','✅'],['Followups','📞'],['Meetings','🤝'],['Site Visits','🏢'],['Bookings','📝'],['Calendar','📅'],['Reminders','🔔'],['Attendance','⏰'],['Team Attendance','👥'],['Leaves','✈️'],['Team Leads','🧑‍🤝‍🧑'],['Projects','🏙️'],['Inventory','📦'],['Reports','📈'],['Settings','⚙️']];
+const ADMIN_MODS=['Assign Leads','Team Attendance','Team Leads'];
+const DEFAULT_PROJECTS=['Clove County','Experion Satori','Sobha Project','Ivory County','M3M Jacob & Co','Eldeco 7Peaks','Eldeco Woww','Nimbus Arishta'];
+
+let DB=null,USER=null,ready=false,canWrite=null;
+let ME={id:null,name:'You',isAdmin:false,avatar:''};
+const PROF={};
+const C={leads:[],events:[],projects:[],staff:[],roster:[],leaves:[]};
+let db={leads:[],followups:[],meetings:[],visits:[],projects:[],leaves:[],team:[]};
+let ATTME=[],ATTALL=[],current='Home',curStage=null;
+
+const esc=v=>String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+const today=()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')};
+const rnd=()=>Math.random().toString(36).slice(2,6);
+const uid=()=>{let i;do{i='CWR-'+Date.now().toString(36).toUpperCase()+rnd().toUpperCase()}while(C.leads.some(l=>l.id===i));return i};
+const eid=()=>'E'+Date.now().toString(36)+rnd();
+const digits=p=>String(p||'').replace(/\D/g,'').slice(-10);
+const nm=id=>!id?'Unassigned':(PROF[id]?.name||(id===ME.id?ME.name:'Team member'));
+function toast(m){const t=$('toast');$('toast-text').textContent=m;t.classList.remove('hidden');clearTimeout(window.tt);window.tt=setTimeout(()=>t.classList.add('hidden'),3000)}
+function toggleSidebar(){$('sidebar').classList.toggle('-translate-x-full');$('mobile-overlay').classList.toggle('hidden')}
+function greeting(){const h=new Date().getHours();return 'Good '+(h<12?'Morning':h<17?'Afternoon':'Evening')+' '+ME.name}
+function buildNav(){
+ const item=([n,i])=>`<button onclick="loadModule('${n}')" data-module="${n}" class="nav-btn w-full flex items-center gap-3 px-6 py-2.5 text-left"><span class="w-5 text-center">${i}</span> ${n}</button>`;
+ const lbl=t=>`<div class="px-6 pt-4 pb-1 text-[10px] tracking-widest text-brand-yellow">${t}</div>`;
+ const adm=MODS.filter(m=>ADMIN_MODS.includes(m[0])),rest=MODS.filter(m=>!ADMIN_MODS.includes(m[0]));
+ $('nav').innerHTML=ME.isAdmin?item(rest[0])+lbl('ADMIN CONTROLS')+adm.map(item).join('')+lbl('WORK')+rest.slice(1).map(item).join(''):rest.map(item).join('')}
+function active(name){document.querySelectorAll('.nav-btn').forEach(b=>{const on=b.dataset.module===name;b.className='nav-btn w-full flex items-center gap-3 px-6 py-2.5 text-left '+(on?'text-white font-medium bg-slate-800/60 border-l-4 border-brand-yellow':'text-slate-300 hover:text-white hover:bg-slate-800/30 transition-colors')})}
+function loadModule(name){if(ADMIN_MODS.includes(name)&&!ME.isAdmin)name='Home';active(name);render(name);if(ME.isAdmin&&['Home','Team Attendance'].includes(name))loadAtt();if(!$('sidebar').classList.contains('-translate-x-full')&&innerWidth<768)toggleSidebar()}
+const card=(t,v,i,o='')=>`<button ${o?`onclick="${o}"`:''} class="bg-brand-card hover:bg-brand-cardHover rounded-xl p-5 border border-slate-800/60 shadow-lg text-left transition"><div class="flex justify-between items-center"><div><div class="text-xs text-slate-400">${t}</div><div class="text-3xl font-bold mt-2">${v}</div></div><span class="text-2xl">${i}</span></div></button>`;
+const layout=(t,s,b,a='')=>`<div class="space-y-6"><div class="flex flex-col md:flex-row md:items-center justify-between gap-3"><div><h2 class="text-2xl font-bold">${t}</h2><p class="text-sm text-slate-400">${s||''}</p></div>${a}</div>${b}</div>`;
+const input=(l,id,v='',t='text',x='')=>`<label class="text-xs text-slate-300">${l}<input id="${id}" type="${t}" value="${esc(v)}" ${x} class="mt-1 w-full bg-brand-dark/80 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-brand-yellow"></label>`;
+const select=(l,id,o,v='')=>`<label class="text-xs text-slate-300">${l}<select id="${id}" class="mt-1 w-full bg-brand-dark border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white">${o.map(x=>{const [val,txt]=Array.isArray(x)?x:[x,x];return `<option value="${esc(val)}" ${val==v?'selected':''}>${esc(txt)}</option>`}).join('')}</select></label>`;
+const btn=(t,f,red=false)=>`<button onclick="${f}" class="${red?'bg-brand-red hover:bg-red-600':'bg-slate-700 hover:bg-slate-600'} px-4 py-2 rounded-lg text-sm font-semibold">${t}</button>`;
+const modal=(t,b)=>`<div id="modal" class="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"><div class="bg-brand-card border border-slate-700 rounded-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto"><div class="p-5 border-b border-slate-700 flex justify-between"><h3 class="font-bold text-lg">${t}</h3><button onclick="closeModal()">✕</button></div><div class="p-5">${b}</div></div></div>`;
+function closeModal(){stopCam();$('modal')?.remove()}
+const show=(t,b)=>{closeModal();document.body.insertAdjacentHTML('beforeend',modal(t,b))};
+const th=(...c)=>`<thead class="bg-brand-sidebar text-slate-300"><tr>${c.map(x=>`<th class="px-4 py-3">${x}</th>`).join('')}</tr></thead>`;
+const empty=(n,t)=>`<tr><td colspan="${n}" class="px-4 py-10 text-center text-slate-500">${t}</td></tr>`;
+const msg=t=>`<div class="text-center text-slate-400 py-20">${t}</div>`;
+const overdue=x=>x.date&&x.date<today()&&x.status!=='Done';
+const adminOnly=()=>{if(!ME.isAdmin){toast('Admin access required');return false}return true};
+async function W(fn,ok){try{await fn();if(ok)toast(ok);return true}catch(e){toast('Save failed: '+(e.code||e.message||e));return false}}
+
+function rebuild(){
+ const all=C.leads,byId=Object.fromEntries(all.map(l=>[l.id,l]));
+ const mineLead=l=>ME.isAdmin||l.assignedId===ME.id;
+ db.leads=all.filter(mineLead).sort((a,b)=>(b.ts||0)-(a.ts||0));
+ const ev=C.events.filter(e=>ME.isAdmin||e.uid===ME.id||byId[e.leadId]?.assignedId===ME.id).map(e=>({...e,name:byId[e.leadId]?.name||e.name||'',phone:byId[e.leadId]?.phone||e.phone||''})).sort((a,b)=>(a.date||'').localeCompare(b.date||'')||(a.time||'').localeCompare(b.time||''));
+ db.followups=ev.filter(e=>e.type==='Followup');db.meetings=ev.filter(e=>e.type==='Meeting');db.visits=ev.filter(e=>e.type==='Site Visit');
+ db.projects=[...C.projects].sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+ db.leaves=C.leaves.filter(x=>ME.isAdmin||x.uid===ME.id).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+ const st=Object.fromEntries(C.staff.map(s=>[s.id,s]));
+ db.team=C.roster.map(r=>({id:r.id,name:nm(r.id),role:st[r.id]?.role||'Employee',phone:st[r.id]?.phone||''}));
+}
+/* ---------- Backend (REST API + polling) ---------- */
+let API_REV=-1,subs=[],polling=null,bt=null,subsInit=false,USERS=[];
+async function api(m,u,b){
+ const r=await fetch(u,{method:m,headers:{'Content-Type':'application/json','X-CWR-Portal':'admin'},body:b===undefined?undefined:JSON.stringify(b),credentials:'same-origin'});
+ if(r.status===401&&u!=='/api/login'){showLogin();throw {code:'login required'}}
+ const j=await r.json().catch(()=>({}));
+ if(!r.ok)throw {code:j.error||('HTTP '+r.status),message:j.error};
+ return j}
+const cpath=p=>{const s=p.split('/');return{c:s[0],id:s[1]}};
+DB={
+ doc:p=>{const {c,id}=cpath(p),u='/api/doc?c='+c+'&id='+encodeURIComponent(id);return{
+  set:async d=>{await api('PUT',u,d);bump()},
+  update:async d=>{await api('PATCH',u,d);bump()},
+  delete:async()=>{await api('DELETE',u);bump()}}},
+ collection:p=>({onSnapshot:(next,err)=>{subs.push({c:p,next,err})}})
+};
+function bump(){clearTimeout(bt);bt=setTimeout(refreshAll,150)}
+async function refreshAll(){
+ try{
+  const [users,att]=await Promise.all([api('GET','/api/users'),api('GET','/api/attendance?uid='+ME.id)]);
+  USERS=users;C.roster=users.map(u=>({id:u.id}));C.staff=users.map(u=>({id:u.id,role:u.role==='admin'?'Admin':(u.title||'Employee'),phone:u.phone||''}));
+  users.forEach(u=>PROF[u.id]={name:u.name});ATTME=att;
+  await Promise.all(subs.map(async s=>{const r=await api('GET','/api/col?c='+s.c);s.next({docs:r.map(d=>({id:d.id,data:()=>d.data}))})}));
+  changed();
+ }catch(e){if(e.code!=='login required')console.warn(e)}
+}
+async function poll(){try{const r=await api('GET','/api/rev');if(r.rev!==API_REV){API_REV=r.rev;await refreshAll()}}catch(e){}}
+async function loadProfiles(){}
+let ct=null;
+function changed(){clearTimeout(ct);ct=setTimeout(()=>{rebuild();ready=true;avatar();refreshView();const rk=C.roster.map(r=>r.id).join();if(ME.isAdmin&&rk!==window._rk){window._rk=rk;loadAtt()}},80)}
+function refreshView(){
+ if(!ready)return;
+ const a=document.activeElement;
+ if(a&&a.closest&&a.closest('#app')&&/INPUT|TEXTAREA|SELECT/.test(a.tagName)){if($('leadBody'))refreshLeadTable();return}
+ render(current)}
+function sub(q,key){q.onSnapshot(s=>{C[key]=s.docs.map(d=>({...d.data(),id:d.id}))})}
+const initials=n=>{const t=(n||'?').split(/\s+/).map(w=>w[0]).join('').slice(0,2).toUpperCase();return 'data:image/svg+xml,'+encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80"><rect width="80" height="80" fill="#fbc02d"/><text x="40" y="53" font-size="34" text-anchor="middle" font-family="Arial" font-weight="bold" fill="#082136">${esc(t)}</text></svg>`)};
+function showLogin(){
+ if($('login'))return;clearInterval(polling);ready=false;
+ document.body.insertAdjacentHTML('beforeend',`<div id="login" class="fixed inset-0 z-[60] bg-brand-dark flex items-center justify-center p-4"><div class="bg-brand-card border border-slate-700 rounded-xl p-8 w-full max-w-sm"><div class="text-center mb-6"><div class="text-4xl">🏢</div><h1 class="text-2xl font-bold mt-2">CWR CRM</h1><p class="text-xs text-slate-400">ClockWise Realty · Sign in</p></div><div class="space-y-4">${input('Username','lg_user','','text','autocomplete="username"')}${input('Password','lg_pass','','password','autocomplete="current-password" onkeydown="if(event.key===\'Enter\')doLogin()"')}<div id="lg_err" class="text-xs text-red-400 min-h-[1rem]"></div><button onclick="doLogin()" class="w-full bg-brand-red hover:bg-red-600 py-2.5 rounded-lg font-semibold">Sign in</button></div></div></div>`)}
+async function doLogin(){
+ try{const me=await api('POST','/api/login',{username:$('lg_user').value,password:$('lg_pass').value});startApp(me)}
+ catch(e){$('lg_err').textContent=e.code||'Login failed'}}
+async function logout(){try{await api('POST','/api/logout')}catch(e){}location.reload()}
+async function startApp(me){
+ $('login')?.remove();
+ ME={id:me.id,name:me.name,isAdmin:me.role==='admin',avatar:initials(me.name)};PROF[me.id]={name:me.name};canWrite=true;
+ if(me.defaultPass){$('banner').innerHTML='You are using the default password. Go to <b>Settings → Change Password</b> now.';$('banner').classList.remove('hidden')}
+ buildNav();avatar();
+ if(!subsInit){subsInit=true;['leads','events','projects','leaves'].forEach(c=>sub(DB.collection(c),c))}
+ await refreshAll();ready=true;loadModule('Home');
+ clearInterval(polling);polling=setInterval(poll,3000)}
+async function boot(){
+ $('app').innerHTML=msg('Loading…');
+ try{startApp(await api('GET','/api/me'))}catch(e){showLogin()}}
+
+/* ---------- Leads ---------- */
+function leadForm(p,l={}){return `<datalist id="projList">${db.projects.map(x=>`<option value="${esc(x.name)}">`).join('')}</datalist><div class="grid md:grid-cols-2 gap-4">${input('Customer Name',p+'name',l.name)}${input('Mobile Number (10 digits)',p+'phone',l.phone,'tel')}${input('Email',p+'email',l.email)}${input('Project / Requirement',p+'project',l.project,'text','list="projList"')}${select('Stage',p+'stage',STAGES,l.stage)}${select('Source',p+'source',SOURCES,l.source)}${input('Budget',p+'budget',l.budget)}${input('Location',p+'location',l.location||'Noida')}${input('Next Follow-up',p+'date',l.nextFollowup,'date')}${input('Notes',p+'notes',l.notes)}${ME.isAdmin?select('Assigned To',p+'assign',C.roster.map(r=>[r.id,nm(r.id)]),l.assignedId||ME.id):''}</div>`}
+function readLead(p,skipId){
+ const g=k=>$(p+k).value.trim(),name=g('name'),phone=digits(g('phone')),project=g('project');
+ if(!name||!project){toast('Name and project are required');return null}
+ if(phone.length!==10){toast('Enter a valid 10-digit mobile number');return null}
+ if(C.leads.some(x=>digits(x.phone)===phone&&x.id!==skipId)){toast('A lead with this number already exists');return null}
+ const d={name,phone,email:g('email'),project,stage:g('stage'),source:g('source'),budget:g('budget'),location:g('location'),nextFollowup:g('date'),notes:g('notes')};
+ if($(p+'assign'))d.assignedId=$(p+'assign').value;
+ return d;
+}
+function openAddLead(){show('Add New Lead',leadForm('l_')+`<div class="mt-5 flex justify-end gap-2">${btn('Cancel','closeModal()')}${btn('Save Lead','saveLead()',true)}</div>`)}
+async function saveLead(){const d=readLead('l_');if(!d)return;const id=uid();
+ if(await W(()=>DB.doc('leads/'+id).set({...d,assignedId:d.assignedId||ME.id,createdBy:ME.id||'',createdAt:today(),ts:Date.now()}),'Lead added successfully'))closeModal()}
+function editLead(id){const l=C.leads.find(x=>x.id==id);if(!l)return;show('Edit Lead',leadForm('e_',l)+`<div class="mt-5 flex justify-end gap-2">${btn('Cancel','closeModal()')}${btn('Update',`updateLead('${id}')`,true)}</div>`)}
+async function updateLead(id){const d=readLead('e_',id);if(!d)return;if(await W(()=>DB.doc('leads/'+id).update(d),'Lead updated'))closeModal()}
+async function deleteLead(id){
+ if(!confirm('Delete this lead and all its follow-ups, meetings and visits?'))return;
+ await W(async()=>{for(const e of C.events.filter(x=>x.leadId==id))await DB.doc('events/'+e.id).delete();await DB.doc('leads/'+id).delete()},'Lead deleted')}
+const moveLead=(id,stage)=>W(()=>DB.doc('leads/'+id).update({stage}),'Stage updated');
+const callLead=p=>{window.open('tel:'+p,'_top')};
+const wa=p=>window.open('https://wa.me/91'+digits(p),'_blank');
+const selectInline=l=>`<select onchange="moveLead('${l.id}',this.value)" class="bg-brand-dark border border-slate-700 rounded px-2 py-1 text-xs">${STAGES.map(s=>`<option ${s==l.stage?'selected':''}>${s}</option>`).join('')}</select>`;
+function leadRows(arr){const n=ME.isAdmin?8:7;return arr.length?arr.map(l=>`<tr class="border-t border-slate-800 hover:bg-slate-800/30"><td class="px-4 py-3 font-mono text-brand-yellow">${esc(l.id)}</td><td class="px-4 py-3 font-semibold">${esc(l.name)}<div class="text-[11px] text-slate-500">${esc(l.source)}</div></td><td class="px-4 py-3">${esc(l.phone)}</td><td class="px-4 py-3">${esc(l.project)}</td><td class="px-4 py-3">${selectInline(l)}</td><td class="px-4 py-3 ${l.nextFollowup&&l.nextFollowup<today()?'text-red-400':''}">${esc(l.nextFollowup||'-')}</td>${ME.isAdmin?`<td class="px-4 py-3">${esc(nm(l.assignedId))}</td>`:''}<td class="px-4 py-3 whitespace-nowrap"><button onclick="callLead('${esc(l.phone)}')" class="px-1">📞</button><button onclick="wa('${esc(l.phone)}')" class="px-1">💬</button><button onclick="editLead('${l.id}')" class="px-1">✏️</button><button onclick="deleteLead('${l.id}')" class="px-1">🗑️</button></td></tr>`).join(''):empty(n,'No leads found')}
+function filterLeads(stage){let a=db.leads.filter(l=>!stage||l.stage===stage),q=($('leadSearch')?.value||'').toLowerCase();return q?a.filter(l=>(l.name+' '+l.phone+' '+l.project).toLowerCase().includes(q)):a}
+function refreshLeadTable(){$('leadBody').innerHTML=leadRows(filterLeads(curStage))}
+function leadModule(stage,title){curStage=stage;const arr=filterLeads(stage);return layout(title,`${arr.length} records${ME.isAdmin?'':' · your assigned leads'}`,`<div class="flex flex-wrap gap-2">${btn('＋ Add Lead','openAddLead()',true)}${btn('⇩ Bulk Import','bulkModal()')}</div><div class="bg-brand-card border border-slate-800 rounded-xl overflow-hidden"><div class="p-4"><input id="leadSearch" oninput="refreshLeadTable()" placeholder="Search name, phone or project..." class="w-full md:w-96 bg-brand-dark border border-slate-700 rounded-lg px-4 py-2.5 text-sm"></div><div class="overflow-x-auto"><table class="w-full text-left text-xs">${ME.isAdmin?th('ID','Client','Phone','Project','Stage','Follow-up','Assigned','Actions'):th('ID','Client','Phone','Project','Stage','Follow-up','Actions')}<tbody id="leadBody">${leadRows(arr)}</tbody></table></div></div>`)}
+function bulkModal(){show('Bulk Import Leads',`<p class="text-xs text-slate-400 mb-3">Paste rows from Excel (tab-separated) or CSV. Use <b>|</b> or tab if any value contains a comma.<br>Format: Name, Phone, Project, Stage, Source, Budget, Location</p><textarea id="bulk" rows="10" class="w-full bg-brand-dark border border-slate-700 rounded-lg p-3 text-sm" placeholder="Amit,9876543210,Clove County,Fresh,Meta,1 Cr,Noida"></textarea><div class="mt-4 flex justify-end gap-2">${btn('Cancel','closeModal()')}${btn('Import Leads','importBulk()',true)}</div>`)}
+async function importBulk(){
+ let n=0,bad=0,dup=0;const seen=new Set(C.leads.map(x=>digits(x.phone)));
+ const rows=$('bulk').value.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
+ for(const r of rows){
+  const sep=r.includes('\t')?'\t':r.includes('|')?'|':',',a=r.split(sep).map(x=>x.trim()),ph=digits(a[1]);
+  if(a.length<3||ph.length!==10||!a[0]){bad++;continue}
+  if(seen.has(ph)){dup++;continue}
+  seen.add(ph);const id=uid()+n;
+  if(await W(()=>DB.doc('leads/'+id).set({name:a[0],phone:ph,project:a[2],stage:STAGES.includes(a[3])?a[3]:'Fresh',source:a[4]||'Bulk',budget:a[5]||'',location:a[6]||'',email:'',assignedId:ME.id||'',nextFollowup:'',notes:'',createdBy:ME.id||'',createdAt:today(),ts:Date.now()+n}))){n++;C.leads.push({id,phone:ph})}else break;
+ }
+ closeModal();toast(`${n} imported, ${dup} duplicate, ${bad} invalid`);
+}
+
+/* ---------- Followups / Meetings / Visits ---------- */
+const leadOpts=()=>db.leads.map(x=>[x.id,x.id+' | '+x.name]);
+function nextFU(leadId,{exclude,add}={}){
+ const d=C.events.filter(x=>x.type==='Followup'&&x.leadId==leadId&&x.status!=='Done'&&x.id!==exclude).map(x=>x.date);if(add)d.push(add);return d.sort()[0]||'';
+}
+function openFollowup(){
+ if(!db.leads.length){toast('Add a lead first');return}
+ show('Schedule Follow-up',`<div class="grid md:grid-cols-2 gap-4">${select('Lead','f_lead',leadOpts())}${input('Date','f_date',today(),'date')}${input('Time','f_time','','time')}${input('Note','f_note')}</div><div class="mt-5 flex justify-end">${btn('Save Follow-up','saveFollowup()',true)}</div>`)}
+async function saveFollowup(){const id=$('f_lead').value,l=C.leads.find(x=>x.id==id);if(!l)return;const date=$('f_date').value;if(!date){toast('Date is required');return}
+ const ok=await W(async()=>{await DB.doc('events/'+eid()).set({type:'Followup',leadId:id,date,time:$('f_time').value,note:$('f_note').value,status:'Pending',uid:ME.id||'',createdAt:Date.now()});await DB.doc('leads/'+id).update({stage:'Followup',nextFollowup:nextFU(id,{add:date})})},'Follow-up scheduled');
+ if(ok){closeModal();loadModule('Followups')}}
+function eventModal(type){
+ if(!db.leads.length){toast('Add a lead first');return}
+ show('Schedule '+type,`<div class="grid md:grid-cols-2 gap-4">${select('Lead','x_lead',leadOpts())}${input('Date','x_date',today(),'date')}${input('Time','x_time','','time')}${input('Location','x_location','Noida')}${input('Notes','x_note')}</div><div class="mt-5 flex justify-end">${btn('Save',`saveEvent('${type}')`,true)}</div>`)}
+async function saveEvent(type){const id=$('x_lead').value,l=C.leads.find(x=>x.id==id);if(!l)return;if(!$('x_date').value||!$('x_time').value){toast('Date and time are required');return}
+ const ok=await W(async()=>{await DB.doc('events/'+eid()).set({type,leadId:id,date:$('x_date').value,time:$('x_time').value,location:$('x_location').value,note:$('x_note').value,status:'Scheduled',uid:ME.id||'',createdAt:Date.now()});await DB.doc('leads/'+id).update({stage:type})},type+' scheduled');
+ if(ok){closeModal();loadModule(type==='Meeting'?'Meetings':'Site Visits')}}
+const listOf=k=>k==='Followup'?db.followups:k==='Meeting'?db.meetings:db.visits;
+async function doneEvent(k,id){const x=C.events.find(y=>y.id===id);if(!x)return;await W(async()=>{await DB.doc('events/'+id).update({status:'Done'});if(k==='Followup')await DB.doc('leads/'+x.leadId).update({nextFollowup:nextFU(x.leadId,{exclude:id})})},'Marked as done')}
+async function deleteEvent(k,id){if(!confirm('Delete this record?'))return;const x=C.events.find(y=>y.id===id);await W(async()=>{await DB.doc('events/'+id).delete();if(k==='Followup'&&x&&C.leads.some(l=>l.id===x.leadId))await DB.doc('leads/'+x.leadId).update({nextFollowup:nextFU(x.leadId,{exclude:id})})})}
+function evRows(arr,k){return arr.length?arr.map(x=>{const done=x.status==='Done',od=overdue(x);return `<tr class="border-t border-slate-800"><td class="px-4 py-3">${esc(x.name)}</td><td class="px-4 py-3">${esc(x.phone)}</td><td class="px-4 py-3 ${od?'text-red-400 font-semibold':''}">${esc(x.date)}${od?' (overdue)':''}</td><td class="px-4 py-3">${esc(x.time||'-')}</td><td class="px-4 py-3">${esc(x.location||x.note||'-')}</td><td class="px-4 py-3 ${done?'text-emerald-400':'text-brand-yellow'}">${esc(x.status)}</td><td class="px-4 py-3 whitespace-nowrap">${done?'':`<button onclick="doneEvent('${k}','${x.id}')" class="px-1" title="Mark done">✔️</button>`}<button onclick="deleteEvent('${k}','${x.id}')" class="px-1">🗑️</button></td></tr>`}).join(''):empty(7,'No records yet')}
+function eventModule(k,title,add){const arr=listOf(k);return layout(title,`${arr.filter(x=>x.status!=='Done').length} pending of ${arr.length}`,btn('＋ '+add,k==='Followup'?'openFollowup()':`eventModal('${k}')`,true)+`<div class="bg-brand-card rounded-xl border border-slate-800 overflow-hidden"><div class="overflow-x-auto"><table class="w-full text-left text-xs">${th('Client','Phone','Date','Time','Location/Note','Status','Action')}<tbody>${evRows(arr,k)}</tbody></table></div></div>`)}
+
+/* ---------- Other modules ---------- */
+function pending(){const t=today(),p=x=>x.date&&x.date<=t&&x.status!=='Done';return[...db.followups.filter(p).map(x=>({...x,kind:x.note||'Follow-up'})),...db.meetings.filter(p).map(x=>({...x,kind:'Meeting'})),...db.visits.filter(p).map(x=>({...x,kind:'Site Visit'}))].sort((a,b)=>a.date.localeCompare(b.date)||(a.time||'').localeCompare(b.time||''))}
+function dashboard(){
+ const t=today(),pd=pending(),od=pd.filter(x=>x.date<t).length,fu=db.followups.filter(x=>x.date===t&&x.status!=='Done').length,me=db.meetings.filter(x=>x.date===t&&x.status!=='Done').length;
+ const cnt=s=>db.leads.filter(x=>x.stage===s).length,max=Math.max(1,...STAGES.map(cnt));
+ return layout('Dashboard',ME.isAdmin?'Live overview of the whole team':'Live overview of your leads',`<div class="grid grid-cols-2 lg:grid-cols-6 gap-4">${card('Today New Leads',db.leads.filter(x=>x.createdAt===t).length,'👤',"loadModule('All Leads')")}${card('Fresh Leads',cnt('Fresh'),'⚡',"loadModule('Fresh Leads')")}${card('Today Follow-ups',fu,'📞',"loadModule('Followups')")}${card('Today Meetings',me,'🤝',"loadModule('Meetings')")}${card('Overdue',od,'⚠️',"loadModule('Reminders')")}${card('Bookings',cnt('Booking'),'📝',"loadModule('Bookings')")}</div>
+<div class="grid lg:grid-cols-2 gap-6"><div class="bg-brand-card border border-slate-800 rounded-xl p-5"><h3 class="font-bold mb-4">Lead Pipeline</h3><div class="space-y-3">${STAGES.map(s=>`<div><div class="flex justify-between text-xs mb-1"><span>${s}</span><span>${cnt(s)}</span></div><div class="h-2 bg-brand-dark rounded-full overflow-hidden"><div class="h-full bg-brand-yellow" style="width:${cnt(s)/max*100}%"></div></div></div>`).join('')}</div></div>
+<div class="bg-brand-card border border-slate-800 rounded-xl p-5"><h3 class="font-bold mb-4">Today's Activity</h3><p class="text-sm text-slate-300 mb-2">Meetings: <b>${me}</b></p><p class="text-sm text-slate-300 mb-2">Follow-ups: <b>${fu}</b></p><p class="text-sm text-slate-300">Overdue: <b class="${od?'text-red-400':''}">${od}</b></p><div class="mt-4 flex flex-wrap gap-2">
+<button onclick="openSelfie('in')" class="inline-flex items-center gap-2 bg-brand-red hover:bg-red-600 px-4 py-2 rounded-lg text-sm font-semibold">📷 Check In (Selfie)</button>
+<button onclick="loadModule('My Attendance')" class="inline-flex items-center gap-2 border border-slate-700 hover:border-brand-yellow px-4 py-2 rounded-lg text-sm">Attendance</button>
+<button onclick="loadModule('Calendar')" class="text-brand-yellow text-sm px-2">Open Calendar →</button>
+</div></div></div>`)}
+function reminders(){const a=pending(),t=today();return layout('Reminders','Pending and overdue follow-ups, meetings and visits',`<div class="bg-brand-card rounded-xl border border-slate-800 p-5">${a.length?a.map(x=>`<div class="p-4 border-b border-slate-800 flex justify-between"><div><b>${esc(x.name)}</b><div class="text-xs text-slate-400">${esc(x.kind)} · ${esc(x.time||'')} · ${esc(x.phone)}</div></div><span class="${x.date<t?'text-red-400':'text-brand-yellow'}">${esc(x.date)}${x.date<t?' (overdue)':''}</span></div>`).join(''):'<div class="text-center text-slate-500 py-10">Nothing pending</div>'}</div>`)}
+function calendar(){const all=[...db.meetings.map(x=>({...x,type:'Meeting'})),...db.visits.map(x=>({...x,type:'Site Visit'})),...db.followups.map(x=>({...x,type:'Follow-up'}))].sort((a,b)=>(a.date||'').localeCompare(b.date||'')||(a.time||'').localeCompare(b.time||''));
+ return layout('Calendar','All scheduled CRM activities',`<div class="bg-brand-card rounded-xl border border-slate-800 overflow-hidden"><div class="overflow-x-auto"><table class="w-full text-left text-xs">${th('Date','Time','Type','Client','Note','Status')}<tbody>${all.map(x=>`<tr class="border-t border-slate-800"><td class="px-4 py-3 ${overdue(x)?'text-red-400':''}">${esc(x.date)}</td><td class="px-4 py-3">${esc(x.time||'-')}</td><td class="px-4 py-3 text-brand-yellow">${esc(x.type)}</td><td class="px-4 py-3">${esc(x.name)}</td><td class="px-4 py-3">${esc(x.note||'-')}</td><td class="px-4 py-3">${esc(x.status)}</td></tr>`).join('')||empty(6,'No scheduled activity')}</tbody></table></div></div>`)}
+function bookings(){const arr=db.leads.filter(x=>x.stage==='Booking');return layout('Bookings','Leads converted to booking',btn('＋ Add Lead','openAddLead()',true)+`<div class="bg-brand-card rounded-xl border border-slate-800 overflow-hidden"><div class="overflow-x-auto"><table class="w-full text-left text-xs">${th('Client','Phone','Project','Budget','Action')}<tbody>${arr.map(l=>`<tr class="border-t border-slate-800"><td class="px-4 py-3">${esc(l.name)}</td><td class="px-4 py-3">${esc(l.phone)}</td><td class="px-4 py-3">${esc(l.project)}</td><td class="px-4 py-3">${esc(l.budget)}</td><td class="px-4 py-3"><button onclick="editLead('${l.id}')">✏️</button></td></tr>`).join('')||empty(5,'No bookings yet')}</tbody></table></div></div>`)}
+
+/* ---------- Attendance (selfie check-in / check-out) ---------- */
+const eff=r=>r.override||r.status;
+const statusTag=v=>`<span class="font-semibold ${v==='Half Day'||v==='Absent'?'text-red-400':v==='Late'?'text-orange-400':v==='Leave'?'text-slate-400':'text-emerald-400'}">${esc(v)}</span>`;
+const nowTime=()=>new Date().toTimeString().slice(0,5);
+const hoursBetween=(a,b)=>{if(!a||!b)return '-';const m=(+b.slice(0,2)*60+ +b.slice(3))-(+a.slice(0,2)*60+ +a.slice(3));return m<0?'-':Math.floor(m/60)+'h '+String(m%60).padStart(2,'0')+'m'};
+const photoUrl=(u,d,k)=>`/api/photo?uid=${encodeURIComponent(u)}&date=${d}&k=${k}`;
+const thumb=(r,k)=>r[k+'Photo']?`<img src="${photoUrl(r.uid||ME.id,r.date,k)}" onclick="viewPhoto('${r.uid||ME.id}','${r.date}','${k}')" class="w-9 h-9 rounded-full object-cover border border-brand-yellow cursor-pointer inline-block mr-1">`:'';
+const timeCell=(r,k)=>r[k+'Time']?thumb(r,k)+esc(r[k+'Time']):'-';
+function viewPhoto(u,d,k){const r=(u===ME.id?ATTME:ATTALL.filter(x=>x.uid===u)).find(x=>x.date===d);if(r)show(esc(nm(u))+' – '+(k==='in'?'Check In ':'Check Out ')+esc(r[k+'Time']),`<img src="${photoUrl(u,d,k)}" class="w-full max-w-sm mx-auto rounded-lg">`)}
+function attendance(){
+ if(!ME.id)return layout('My Attendance','',msg('Attendance needs a logged-in user.'));
+ const a=ATTME.find(x=>x.date===today()),st=a&&eff(a);
+ let acts='';
+ if(!a)acts=`${btn('📷 Check In (Selfie)',"openSelfie('in')",true)}${btn('Mark Leave',"markLeaveToday()")}`;
+ else if(st!=='Leave'&&st!=='Absent'&&!a.outTime)acts=btn('📷 Check Out (Selfie)',"openSelfie('out')",true);
+ else acts='<p class="text-xs text-slate-400">Attendance complete for today.</p>';
+ return layout('My Attendance','Selfie check-in and check-out · After 10:30 = Late · After 11:00 = Half Day',`<div class="bg-brand-card rounded-xl border border-slate-800 p-6 max-w-xl"><div class="text-sm">Date: <b>${today()}</b></div><div class="text-sm mt-2">Status: <b>${a?statusTag(st):'<span class="text-brand-yellow">Not marked</span>'}</b>${a?.override?' <span class="text-xs text-slate-400">(set by admin)</span>':''}</div>${a&&a.inTime?`<div class="text-sm mt-2 flex items-center">Check In: <span class="ml-2">${timeCell(a,'in')}</span></div><div class="text-sm mt-2 flex items-center">Check Out: <span class="ml-2">${timeCell(a,'out')}</span></div><div class="text-sm mt-2">Worked: <b>${hoursBetween(a.inTime,a.outTime)}</b></div>`:''}<div class="flex flex-wrap gap-2 mt-5">${acts}</div></div>
+ <div class="bg-brand-card rounded-xl border border-slate-800 overflow-hidden"><div class="overflow-x-auto"><table class="w-full text-left text-xs">${th('Date','Status','Check In','Check Out','Worked')}<tbody>${ATTME.map(x=>`<tr class="border-t border-slate-800"><td class="px-4 py-3">${esc(x.date)}</td><td class="px-4 py-3">${statusTag(eff(x))}</td><td class="px-4 py-3">${timeCell(x,'in')}</td><td class="px-4 py-3">${timeCell(x,'out')}</td><td class="px-4 py-3">${hoursBetween(x.inTime,x.outTime)}</td></tr>`).join('')||empty(5,'No records')}</tbody></table></div></div>`)}
+let camStream=null,camAct=null,camTarget=null;
+function stopCam(){camStream?.getTracks().forEach(t=>t.stop());camStream=null}
+function closeCam(){closeModal()}
+async function openSelfie(act){
+ camAct=act;
+ show('Selfie – '+(act==='in'?'Check In':act==='mark'?'Mark Present: '+nm(camTarget):'Check Out'),`<div class="text-center"><video id="camVid" autoplay playsinline muted class="w-full max-w-sm mx-auto rounded-lg bg-black"></video><div class="mt-4 flex justify-center gap-2">${btn('Cancel','closeCam()')}${btn('📷 Capture','captureSelfie()',true)}</div><p id="camMsg" class="text-xs text-slate-400 mt-3">Live selfie required. Please allow camera access.</p></div>`);
+ try{camStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user'},audio:false});const v=$('camVid');if(v)v.srcObject=camStream;else stopCam()}catch(e){if($('camMsg'))$('camMsg').innerHTML='<span class="text-red-400">Camera access is required for attendance. Allow camera permission in your browser and try again.</span>'}
+}
+function shrink(src,w,h){const W=240,c=document.createElement('canvas');c.width=W;c.height=Math.round(W*h/w)||W;c.getContext('2d').drawImage(src,0,0,c.width,c.height);return c.toDataURL('image/jpeg',0.5)}
+function captureSelfie(){const v=$('camVid');if(!v||!v.videoWidth){toast('Camera not ready yet');return}const p=shrink(v,v.videoWidth,v.videoHeight);closeModal();saveSelfie(p)}
+async function saveSelfie(photo){
+ if(camAct==='mark'){const u=camTarget;await W(()=>api('POST','/api/attendance/mark',{uid:u,status:'Present',photo}),nm(u)+': Present marked with selfie');loadAtt();return}
+ const ci=camAct==='in';
+ await W(async()=>{const r=await api('POST','/api/attendance/'+(ci?'checkin':'checkout'),{photo});toast((ci?'Checked in at ':'Checked out at ')+r.time+(ci&&r.status!=='Present'?' – marked '+r.status:''))});
+ refreshAll()}
+async function markLeaveToday(){await W(()=>api('POST','/api/attendance/leave',{}),'Leave marked');refreshAll()}
+async function loadAtt(){
+ try{ATTALL=(await api('GET','/api/attendance?all=1')).sort((a,b)=>b.date.localeCompare(a.date)||nm(a.uid).localeCompare(nm(b.uid)))}catch(e){return}
+ if(['Team Attendance','Home'].includes(current))render(current)}
+async function setOverride(u,d,v){if(!adminOnly())return;await W(()=>api('PATCH','/api/attendance/'+u+'/'+d,{override:v}),'Status changed to '+v);loadAtt()}
+async function markTeam(status){if(!adminOnly())return;const u=$('ta_member').value;if(!u)return;if(status==='Present'){camTarget=u;openSelfie('mark');return}await W(()=>api('POST','/api/attendance/mark',{uid:u,status}),nm(u)+': '+status+' marked');loadAtt()}
+function teamAttendance(){
+ const admin=ME.isAdmin;
+ return layout('Team Attendance',admin?'View everyone, and change any status as admin':'Attendance of all team members',(admin?`<div class="bg-brand-card rounded-xl border border-slate-800 p-5 flex flex-wrap items-end gap-3">${select('Member','ta_member',C.roster.map(r=>[r.id,nm(r.id)]))}${btn('Present today (Selfie)',"markTeam('Present')",true)}${btn('Leave today',"markTeam('Leave')")}${btn('Absent today',"markTeam('Absent')")}</div>`:'')+`<div class="bg-brand-card rounded-xl border border-slate-800 overflow-hidden"><div class="overflow-x-auto"><table class="w-full text-left text-xs">${th('Name','Date','Status','Check In','Check Out','Worked')}<tbody>${ATTALL.map(x=>`<tr class="border-t border-slate-800"><td class="px-4 py-3">${esc(nm(x.uid))}</td><td class="px-4 py-3">${esc(x.date)}</td><td class="px-4 py-3">${admin?`<select onchange="setOverride('${x.uid}','${x.date}',this.value)" class="bg-brand-dark border border-slate-700 rounded px-2 py-1 text-xs">${ATT_STATUS.map(s=>`<option ${s===eff(x)?'selected':''}>${s}</option>`).join('')}</select>${x.override?' <span class="text-[10px] text-slate-400">edited</span>':''}`:statusTag(eff(x))}</td><td class="px-4 py-3">${timeCell(x,'in')}</td><td class="px-4 py-3">${timeCell(x,'out')}</td><td class="px-4 py-3">${hoursBetween(x.inTime,x.outTime)}</td></tr>`).join('')||empty(6,'No records')}</tbody></table></div></div>`)}
+
+/* ---------- Leaves / Team / Projects ---------- */
+function leaves(){return layout('Leaves',ME.isAdmin?'Approve or reject leave requests':'Your leave requests',btn('＋ Request Leave','requestLeave()',true)+`<div class="bg-brand-card rounded-xl border border-slate-800 p-5">${db.leaves.map(x=>`<div class="py-3 border-b border-slate-800 text-sm flex flex-wrap justify-between gap-2"><span>${esc(nm(x.uid))} — ${esc(x.date)} — ${esc(x.reason)} — <b class="${x.status==='Approved'?'text-emerald-400':x.status==='Rejected'?'text-red-400':'text-brand-yellow'}">${esc(x.status)}</b></span>${ME.isAdmin&&x.status==='Pending'?`<span>${btn('Approve',`leaveDecision('${x.id}','Approved')`,true)} ${btn('Reject',`leaveDecision('${x.id}','Rejected')`)}</span>`:''}</div>`).join('')||'<div class="text-slate-500">No leave requests</div>'}</div>`)}
+async function requestLeave(){const d=prompt('Leave date (YYYY-MM-DD):',today());if(!d)return;if(!/^\d{4}-\d{2}-\d{2}$/.test(d)){toast('Use YYYY-MM-DD format');return}await W(()=>DB.doc('leaves/L'+eid()).set({uid:ME.id||'',date:d,reason:prompt('Reason:')||'',status:'Pending',createdAt:Date.now()}),'Leave requested')}
+async function leaveDecision(id,s){if(!adminOnly())return;await W(()=>DB.doc('leaves/'+id).update({status:s,decidedBy:ME.id}),'Leave '+s.toLowerCase())}
+function team(){
+ const cnt=(u,f)=>C.leads.filter(l=>l.assignedId===u&&f(l)).length,un=Object.fromEntries(USERS.map(u=>[u.id,u]));
+ return layout('Team','Members, logins and lead load',(ME.isAdmin?btn('＋ Add Team Member','addUserModal()',true):'')+`<div class="bg-brand-card rounded-xl border border-slate-800 overflow-hidden"><div class="overflow-x-auto"><table class="w-full text-left text-xs">${th('Name','Username','Role','Phone','Leads','Bookings','')}<tbody>${db.team.map(x=>`<tr class="border-t border-slate-800"><td class="px-4 py-3">${esc(x.name)}${x.id===ME.id?' (you)':''}</td><td class="px-4 py-3">${esc(un[x.id]?.username||'')}</td><td class="px-4 py-3">${esc(x.role)}</td><td class="px-4 py-3">${esc(x.phone)}</td><td class="px-4 py-3">${cnt(x.id,()=>true)}</td><td class="px-4 py-3">${cnt(x.id,l=>l.stage==='Booking')}</td><td class="px-4 py-3 whitespace-nowrap">${ME.isAdmin?`<button onclick="editUser('${x.id}')" title="Edit">✏️</button><button onclick="resetPw('${x.id}')" title="Reset password" class="px-1">🔑</button>${x.id!==ME.id?`<button onclick="removeUser('${x.id}')" title="Remove">🗑️</button>`:''}`:''}</td></tr>`).join('')||empty(7,'No members yet')}</tbody></table></div></div>`)}
+function addUserModal(){show('Add Team Member',`<div class="grid md:grid-cols-2 gap-4">${input('Full Name','u_name')}${input('Username (for login)','u_user')}${input('Password (min 6)','u_pass','','password')}${select('Role','u_role',[['employee','Employee'],['admin','Admin']])}${input('Designation','u_title','Sales Executive')}${input('Phone','u_phone')}</div><div class="mt-5 flex justify-end gap-2">${btn('Cancel','closeModal()')}${btn('Create','saveUser()',true)}</div>`)}
+async function saveUser(){if(!adminOnly())return;if(await W(()=>api('POST','/api/users',{name:$('u_name').value.trim(),username:$('u_user').value,password:$('u_pass').value,role:$('u_role').value,title:$('u_title').value,phone:$('u_phone').value}),'Team member created')){closeModal();refreshAll()}}
+function editUser(id){const u=USERS.find(x=>x.id===id);if(!u)return;show('Edit Team Member',`<div class="grid md:grid-cols-2 gap-4">${input('Full Name','u_name',u.name)}${select('Role','u_role',[['employee','Employee'],['admin','Admin']],u.role)}${input('Designation','u_title',u.title)}${input('Phone','u_phone',u.phone)}</div><div class="mt-5 flex justify-end gap-2">${btn('Cancel','closeModal()')}${btn('Update',`updateUser('${id}')`,true)}</div>`)}
+async function updateUser(id){if(await W(()=>api('PATCH','/api/users/'+id,{name:$('u_name').value.trim(),role:$('u_role').value,title:$('u_title').value,phone:$('u_phone').value}),'Updated')){closeModal();refreshAll()}}
+async function resetPw(id){const p=prompt('New password for '+nm(id)+' (min 6 characters):');if(!p)return;await W(()=>api('PATCH','/api/users/'+id,{password:p}),'Password reset')}
+async function removeUser(id){if(!confirm('Remove '+nm(id)+'? Their leads will be moved to you.'))return;if(await W(()=>api('DELETE','/api/users/'+id),'Member removed'))refreshAll()}
+function projects(){return layout('Projects','Your project master list',(ME.isAdmin?btn('＋ Add Project','addProject()',true):'')+`<div class="grid md:grid-cols-3 gap-4">${db.projects.map(p=>`<div class="bg-brand-card border border-slate-800 rounded-xl p-5"><span class="text-2xl">🏙️</span><h3 class="font-bold mt-3">${esc(p.name)}</h3><div class="text-xs text-slate-400 mt-1">${C.leads.filter(l=>l.project===p.name).length} leads</div>${ME.isAdmin?`<button onclick="removeProject('${p.id}')" class="text-red-400 text-xs mt-4">Remove</button>`:''}</div>`).join('')}</div>`)}
+async function addProject(){if(!adminOnly())return;const p=(prompt('Project name:')||'').trim();if(p)await W(()=>DB.doc('projects/P'+eid()).set({name:p}),'Project added')}
+async function removeProject(id){if(!adminOnly()||!confirm('Remove this project?'))return;await W(()=>DB.doc('projects/'+id).delete())}
+function inventory(){return layout('Inventory','Project inventory placeholder connected to project master',`<div class="bg-brand-card border border-slate-800 rounded-xl p-6"><p class="text-sm text-slate-300">Inventory module is ready for unit-level inventory. Current projects: <b>${db.projects.length}</b>.</p><p class="text-xs text-slate-500 mt-2">Add unit, tower, floor, size, price and availability fields when you start unit-wise inventory.</p></div>`)}
+function reports(){const rows=(a,f)=>a.map(s=>`<div class="flex justify-between py-2 border-b border-slate-800 text-sm"><span>${esc(s)}</span><b>${f(s)}</b></div>`).join('');
+ return layout('Reports','CRM performance snapshot',`<div class="grid md:grid-cols-2 gap-5"><div class="bg-brand-card border border-slate-800 rounded-xl p-5"><h3 class="font-bold mb-4">Stage Report</h3>${rows(STAGES,s=>db.leads.filter(x=>x.stage===s).length)}</div><div class="bg-brand-card border border-slate-800 rounded-xl p-5"><h3 class="font-bold mb-4">Sources</h3>${rows([...new Set(db.leads.map(x=>x.source))],s=>db.leads.filter(x=>x.source===s).length)}</div>${ME.isAdmin?`<div class="bg-brand-card border border-slate-800 rounded-xl p-5 md:col-span-2"><h3 class="font-bold mb-4">By Team Member (leads / bookings)</h3>${rows(C.roster.map(r=>r.id),u=>C.leads.filter(l=>l.assignedId===u).length+' / '+C.leads.filter(l=>l.assignedId===u&&l.stage==='Booking').length).replace(/<span>(u_[^<]*)<\/span>/g,(m,id)=>`<span>${esc(nm(id))}</span>`)}</div>`:''}</div>`)}
+function settings(){return layout('Settings','Profile, password and CRM data',`<div class="bg-brand-card border border-slate-800 rounded-xl p-6 max-w-2xl space-y-6"><div class="flex items-center gap-4"><img src="${esc(ME.avatar)}" class="w-14 h-14 rounded-full border-2 border-brand-yellow"><div class="flex-1"><div class="font-bold">${esc(ME.name)}</div><div class="text-xs text-slate-400">${ME.isAdmin?'Admin':'Team member'}</div></div>${btn('Logout','logout()')}</div><div><h3 class="font-bold mb-3">Change Password</h3><div class="grid md:grid-cols-2 gap-4">${input('Current password','pw_old','','password')}${input('New password (min 6)','pw_new','','password')}</div><div class="mt-3">${btn('Change Password','changePassword()',true)}</div></div>${ME.isAdmin?`<div><h3 class="font-bold mb-3">Data</h3><input id="imp" type="file" accept=".json,application/json" class="hidden" onchange="importData(this)"><div class="flex flex-wrap gap-2">${btn('Export Backup','exportData()')}${btn('Import Backup',"$('imp').click()")}</div><p class="text-xs text-slate-500 mt-3">Import also accepts the backup file from the older single-file CRM. The server keeps everything in <b>data.json</b> – copy that file for a full backup (it includes attendance selfies).</p></div>`:''}</div>`)}
+function avatar(){$('welcomeTitle').textContent=greeting();$('roleLine').textContent='ClockWise Realty CRM · '+(ME.isAdmin?'Admin':'Team member');$('profileImg').src=ME.avatar||''}
+function exportData(){if(!adminOnly())return;const ev=t=>C.events.filter(e=>e.type===t);
+ const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify({leads:C.leads,followups:ev('Followup'),meetings:ev('Meeting'),visits:ev('Site Visit'),projects:C.projects.map(p=>p.name)},null,2)],{type:'application/json'}));a.download='CWR-CRM-backup.json';a.click()}
+async function changePassword(){const o=$('pw_old').value,n=$('pw_new').value;if(await W(()=>api('POST','/api/password',{old:o,new:n}),'Password changed')){$('pw_old').value=$('pw_new').value='';$('banner').classList.add('hidden')}}
+function importData(el){
+ if(!adminOnly())return;const f=el.files[0];if(!f)return;const r=new FileReader();
+ r.onload=async()=>{
+  let d;try{d=JSON.parse(r.result);if(!Array.isArray(d.leads))throw 0}catch(e){toast('Invalid backup file');el.value='';return}
+  if(!confirm('Import '+d.leads.length+' leads into the shared CRM? Existing phone numbers are skipped.')){el.value='';return}
+  const seen=new Set(C.leads.map(x=>digits(x.phone)));let n=0,idMap={};
+  for(const l of d.leads){const ph=digits(l.phone);if(ph.length!==10||seen.has(ph))continue;seen.add(ph);const id=uid()+n;idMap[l.id]=id;
+   const o={name:l.name||'',phone:ph,email:l.email||'',project:l.project||'',stage:STAGES.includes(l.stage)?l.stage:'Fresh',source:l.source||'Other',budget:l.budget||'',location:l.location||'',nextFollowup:l.nextFollowup||'',notes:l.notes||'',assignedId:ME.id||'',createdBy:ME.id||'',createdAt:l.createdAt||today(),ts:Date.now()+n};
+   if(!await W(()=>DB.doc('leads/'+id).set(o)))break;C.leads.push({id,phone:ph});n++}
+  for(const [k,t] of [['followups','Followup'],['meetings','Meeting'],['visits','Site Visit']])for(const e of d[k]||[]){const lid=idMap[e.leadId];if(!lid)continue;await W(()=>DB.doc('events/'+eid()).set({type:t,leadId:lid,date:e.date||'',time:e.time||'',location:e.location||'',note:e.note||'',status:e.status||'Pending',uid:ME.id||'',createdAt:Date.now()}))}
+  const have=new Set(C.projects.map(p=>p.name));for(const p of d.projects||[])if(typeof p==='string'&&!have.has(p)){have.add(p);await W(()=>DB.doc('projects/P'+eid()).set({name:p}))}
+  el.value='';toast(n+' leads imported');
+ };r.readAsText(f)}
+
+/* ---------- Admin-only screens ---------- */
+const stCell=s=>s==='Not checked in'?'<span class="text-slate-500">Not checked in</span>':statusTag(s);
+function adminPanel(){
+ const t=today(),L=C.leads,byId=Object.fromEntries(L.map(l=>[l.id,l]));
+ const stOf=u=>{const a=ATTALL.find(x=>x.uid===u&&x.date===t);return a?eff(a):'Not checked in'};
+ const members=C.roster.map(r=>r.id),sts=members.map(stOf),c=s=>sts.filter(x=>x===s).length;
+ const od=u=>C.events.filter(e=>overdue(e)&&byId[e.leadId]?.assignedId===u).length;
+ const unassigned=L.filter(l=>!l.assignedId).length,pl=C.leaves.filter(x=>x.status==='Pending').length;
+ const totOd=C.events.filter(e=>overdue(e)).length,book=L.filter(l=>l.stage==='Booking').length;
+ const rows=members.map(u=>{const mine=L.filter(l=>l.assignedId===u),b=mine.filter(l=>l.stage==='Booking').length;return `<tr class="border-t border-slate-800"><td class="px-4 py-3 font-semibold">${esc(nm(u))}${u===ME.id?' (you)':''}</td><td class="px-4 py-3">${stCell(stOf(u))}</td><td class="px-4 py-3">${mine.length}</td><td class="px-4 py-3">${b}</td><td class="px-4 py-3 ${od(u)?'text-red-400 font-semibold':''}">${od(u)}</td><td class="px-4 py-3">${mine.length?Math.round(b/mine.length*100):0}%</td></tr>`}).join('');
+ return layout('Admin Panel','Team-wide control room · '+t,`<div class="grid grid-cols-2 lg:grid-cols-5 gap-4">${card('Total Leads',L.length,'📇',"loadModule('All Leads')")}${card('Unassigned Leads',unassigned,'🎯',"loadModule('Assign Leads')")}${card('Pending Leaves',pl,'✈️',"loadModule('Leaves')")}${card('Team Overdue',totOd,'⚠️',"loadModule('Reminders')")}${card('Bookings',book,'📝',"loadModule('Bookings')")}</div>
+<div><h3 class="font-bold mb-3">Today's Attendance</h3><div class="grid grid-cols-2 lg:grid-cols-5 gap-4">${card('Present',c('Present'),'✅',"loadModule('Team Attendance')")}${card('Late',c('Late'),'🕥',"loadModule('Team Attendance')")}${card('Half Day',c('Half Day'),'🌗',"loadModule('Team Attendance')")}${card('Leave / Absent',c('Leave')+c('Absent'),'🏖️',"loadModule('Team Attendance')")}${card('Not Checked In',c('Not checked in'),'⏳',"loadModule('Team Attendance')")}</div></div>
+<div class="bg-brand-card border border-slate-800 rounded-xl overflow-hidden"><div class="p-4 font-bold">Team Performance</div><div class="overflow-x-auto"><table class="w-full text-left text-xs">${th('Member','Today','Leads','Bookings','Overdue','Conversion')}<tbody>${rows||empty(6,'No team members yet')}</tbody></table></div></div>
+<div class="flex flex-wrap gap-2">${btn('🎯 Assign Leads',"loadModule('Assign Leads')",true)}${btn('👥 Team Attendance',"loadModule('Team Attendance')")}${btn('✈️ Approve Leaves',"loadModule('Leaves')")}${btn('⚙️ Backup & Import',"loadModule('Settings')")}</div>`)}
+let asF='all',asQ='';
+function assignRows(){
+ const q=asQ.toLowerCase(),a=C.leads.filter(l=>(asF==='all'||(asF==='none'?!l.assignedId:l.assignedId===asF))&&(!q||(l.name+' '+l.phone+' '+l.project).toLowerCase().includes(q))).sort((x,y)=>(y.ts||0)-(x.ts||0));
+ return a.length?a.map(l=>`<tr class="border-t border-slate-800"><td class="px-4 py-3"><input type="checkbox" class="asChk" value="${l.id}"></td><td class="px-4 py-3 font-semibold">${esc(l.name)}<div class="text-[11px] text-slate-500">${esc(l.id)}</div></td><td class="px-4 py-3">${esc(l.phone)}</td><td class="px-4 py-3">${esc(l.project)}</td><td class="px-4 py-3">${esc(l.stage)}</td><td class="px-4 py-3">${l.assignedId?esc(nm(l.assignedId)):'<span class="text-orange-400">Unassigned</span>'}</td></tr>`).join(''):empty(6,'No leads')}
+function refreshAssign(){asQ=$('asSearch').value;asF=$('asFilter').value;$('asBody').innerHTML=assignRows()}
+function assignLeads(){
+ const opts=C.roster.map(r=>[r.id,nm(r.id)]);
+ return layout('Assign Leads','Select leads and assign them to a team member',`<div class="bg-brand-card border border-slate-800 rounded-xl p-4 flex flex-wrap items-end gap-3"><label class="text-xs text-slate-300">Show<select id="asFilter" onchange="refreshAssign()" class="mt-1 block bg-brand-dark border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white"><option value="all" ${asF==='all'?'selected':''}>All leads</option><option value="none" ${asF==='none'?'selected':''}>Unassigned only</option>${opts.map(([v,n])=>`<option value="${esc(v)}" ${asF===v?'selected':''}>${esc(n)}</option>`).join('')}</select></label><input id="asSearch" value="${esc(asQ)}" oninput="refreshAssign()" placeholder="Search name, phone or project..." class="bg-brand-dark border border-slate-700 rounded-lg px-4 py-2.5 text-sm w-full md:w-72">${select('Assign selected to','asTo',opts)}${btn('Assign Selected','assignSelected()',true)}</div><div class="bg-brand-card border border-slate-800 rounded-xl overflow-hidden"><div class="overflow-x-auto"><table class="w-full text-left text-xs">${th('<input type="checkbox" onclick="document.querySelectorAll(\'.asChk\').forEach(c=>c.checked=this.checked)">','Client','Phone','Project','Stage','Assigned To')}<tbody id="asBody">${assignRows()}</tbody></table></div></div>`)}
+async function assignSelected(){
+ if(!adminOnly())return;const u=$('asTo').value,ids=[...document.querySelectorAll('.asChk:checked')].map(x=>x.value);
+ if(!u){toast('No team member available');return}if(!ids.length){toast('Select leads first');return}
+ await W(async()=>{for(const id of ids)await DB.doc('leads/'+id).update({assignedId:u})},ids.length+' lead(s) assigned to '+nm(u))}
+
+const views={
+ 'Home':()=>ME.isAdmin?adminPanel():dashboard(),'Assign Leads':assignLeads,'All Leads':()=>leadModule(null,'All Leads'),'Fresh Leads':()=>leadModule('Fresh','Fresh Leads'),'Suspect':()=>leadModule('Suspect','Suspect Leads'),'Prospect':()=>leadModule('Prospect','Prospects'),
+ 'Followups':()=>eventModule('Followup','Follow-ups','Schedule Follow-up'),'Meetings':()=>eventModule('Meeting','Meetings','Schedule Meeting'),'Site Visits':()=>eventModule('Site Visit','Site Visits','Schedule Site Visit'),
+ 'Bookings':bookings,'Calendar':calendar,'Reminders':reminders,'Attendance':attendance,'Team Attendance':teamAttendance,'Leaves':leaves,
+ 'Team Leads':team,'Projects':projects,'Inventory':inventory,'Reports':reports,'Settings':settings
+};
+function render(name){current=name;$('app').innerHTML=(views[name]||dashboard)();$('reminderDot').classList.toggle('hidden',!pending().length)}
+buildNav();boot();
+if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});
+</script>
+</body>
+</html>

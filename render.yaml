@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: cwr-crm
+    runtime: node
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: TRUST_PROXY
+        value: "1"
+      - key: DATA_FILE
+        value: /data/data.json
+      - key: ADMIN_USER
+        sync: false
+      - key: ADMIN_PASS
+        sync: false
+    disk:
+      name: cwr-data
+      mountPath: /data
+      sizeGB: 1

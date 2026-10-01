@@ -1,0 +1,43 @@
+CLOCKWISE REALTY CRM - ONLINE + PHONE INSTALL GUIDE
+
+WHAT IS READY
+- Node.js CRM backend
+- Admin and employee accounts
+- Server-side employee lead isolation
+- PWA manifests and icons
+- Service worker registration
+- Dockerfile
+- Render deployment configuration (render.yaml)
+
+IMPORTANT
+The ZIP itself cannot be made into a shared multi-phone CRM by installing it locally on each phone. The Node.js server must run online and all phones must open the same online URL.
+
+RECOMMENDED FLOW
+1. Put this project in a private GitHub repository.
+2. Create a Render Web Service from that repository.
+3. Set ADMIN_USER and ADMIN_PASS as secret environment variables.
+4. Keep DATA_FILE=/data/data.json and the persistent disk mounted at /data. This is important because the CRM currently stores its database in data.json.
+5. Deploy and wait for the service to become Live.
+6. Open the generated HTTPS URL in Chrome on a phone.
+7. Chrome menu (three dots) -> Add to Home screen / Install app.
+8. The CWR CRM icon will appear on the phone home screen.
+9. Give each employee their own username/password from the Admin panel.
+10. Employees should use the same HTTPS URL. They will see only their assigned leads.
+
+EMPLOYEE PORTAL
+If the employee portal is intended as the default mobile entry point, open:
+https://YOUR-DOMAIN/employee.html
+The existing employee.webmanifest is already included.
+
+CUSTOM DOMAIN (OPTIONAL)
+After deployment, connect a domain such as crm.clockwiserealty.in in the hosting provider's custom-domain settings. Use HTTPS.
+
+SECURITY
+- Do not share the ADMIN_PASS publicly.
+- Change the initial admin password after first login.
+- Use unique employee passwords.
+- Do not put data.json in a public Git repository.
+- Keep the repository private.
+
+CURRENT DATABASE NOTE
+This version uses a JSON file as its database. A persistent server disk is therefore required if the hosting platform uses an ephemeral filesystem. For a larger production CRM, migrate the database to PostgreSQL.
